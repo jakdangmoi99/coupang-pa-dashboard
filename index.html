@@ -486,19 +486,17 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 // DB에 엑셀 데이터 저장
 async function saveToDB(month,rows){
-  // 기존 같은 월 데이터 삭제 후 새로 삽입
   await sb.from('pa_data').delete().eq('file_month',month);
-  // 500행씩 배치 삽입 (Supabase 제한 대응)
   const mapped=rows.map(r=>({
-    날짜:String(r['날짜']||''),
-    캠페인명:r['캠페인명']||'',
-    키워드:r['키워드']||'',
-    광고집행_상품명:r['광고집행 상품명']||'',
-    노출수:parseFloat(String(r['노출수']||0).replace(/[,%]/g,''))||0,
-    클릭수:parseFloat(String(r['클릭수']||0).replace(/[,%]/g,''))||0,
-    광고비:parseFloat(String(r['광고비']||0).replace(/[,%]/g,''))||0,
-    총_주문수_14일:parseFloat(String(r['총 주문수(14일)']||0).replace(/[,%]/g,''))||0,
-    총_전환매출액_14일:parseFloat(String(r['총 전환매출액(14일)']||0).replace(/[,%]/g,''))||0,
+    date_str:String(r['날짜']||''),
+    campaign:r['캠페인명']||'',
+    keyword:r['키워드']||'',
+    product_name:r['광고집행 상품명']||'',
+    impressions:parseFloat(String(r['노출수']||0).replace(/[,%]/g,''))||0,
+    clicks:parseFloat(String(r['클릭수']||0).replace(/[,%]/g,''))||0,
+    spend:parseFloat(String(r['광고비']||0).replace(/[,%]/g,''))||0,
+    orders_14d:parseFloat(String(r['총 주문수(14일)']||0).replace(/[,%]/g,''))||0,
+    revenue_14d:parseFloat(String(r['총 전환매출액(14일)']||0).replace(/[,%]/g,''))||0,
     file_month:month
   }));
   for(let i=0;i<mapped.length;i+=500){
@@ -511,7 +509,7 @@ async function saveToDB(month,rows){
 
 // DB에서 전체 데이터 로드
 async function loadFromDB(){
-  const{data,error}=await sb.from('pa_data').select('*').order('날짜',{ascending:true});
+  const{data,error}=await sb.from('pa_data').select('*').order('date_str',{ascending:true});
   if(error){console.error('DB 로드 오류:',error);return[];}
   return data||[];
 }
@@ -522,17 +520,16 @@ function dbToAF(data){
   data.forEach(r=>{
     const m=r.file_month;
     if(!byMonth[m])byMonth[m]=[];
-    // 대시보드가 기대하는 한글 키로 매핑
     byMonth[m].push({
-      '날짜':r.날짜,
-      '캠페인명':r.캠페인명,
-      '키워드':r.키워드,
-      '광고집행 상품명':r.광고집행_상품명,
-      '노출수':r.노출수,
-      '클릭수':r.클릭수,
-      '광고비':r.광고비,
-      '총 주문수(14일)':r.총_주문수_14일,
-      '총 전환매출액(14일)':r.총_전환매출액_14일
+      '날짜':r.date_str,
+      '캠페인명':r.campaign,
+      '키워드':r.keyword,
+      '광고집행 상품명':r.product_name,
+      '노출수':r.impressions,
+      '클릭수':r.clicks,
+      '광고비':r.spend,
+      '총 주문수(14일)':r.orders_14d,
+      '총 전환매출액(14일)':r.revenue_14d
     });
   });
   return Object.keys(byMonth).sort().map(m=>({name:m+'.xlsx',month:m,rows:byMonth[m]}));
