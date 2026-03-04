@@ -486,8 +486,12 @@ const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSI
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 // DB에 엑셀 데이터 저장
-async function saveToDB(month,rows){
-  await sb.from('pa_data').delete().eq('file_month',month);
+async function saveToDB(month,fileName,rows){
+  const fileKey=fileName.replace(/[^a-zA-Z0-9가-힣_.()-]/g,'_');
+  // 해당 파일 데이터만 삭제 (file_key 기준)
+  const{error:delErr}=await sb.from('pa_data').delete().eq('file_key',fileKey);
+  if(delErr)console.error('DB 삭제 오류:',delErr);
+
   const mapped=rows.map(r=>({
     date_str:String(r['날짜']||''),
     campaign:r['캠페인명']||'',
@@ -498,40 +502,98 @@ async function saveToDB(month,rows){
     spend:parseFloat(String(r['광고비']||0).replace(/[,%]/g,''))||0,
     orders_14d:parseFloat(String(r['총 주문수(14일)']||0).replace(/[,%]/g,''))||0,
     revenue_14d:parseFloat(String(r['총 전환매출액(14일)']||0).replace(/[,%]/g,''))||0,
-    file_month:month
+    file_month:month,
+    file_key:fileKey
   }));
-  for(let i=0;i<mapped.length;i+=500){
-    const batch=mapped.slice(i,i+500);
+
+  // 진행상황 표시
+  const total=mapped.length;
+  let saved=0;
+  const batchSize=2000;
+  const statusEl=document.getElementById('hdSub');
+
+  for(let i=0;i<mapped.length;i+=batchSize){
+    const batch=mapped.slice(i,i+batchSize);
     const{error}=await sb.from('pa_data').insert(batch);
-    if(error)console.error('DB 저장 오류:',error);
+    if(error){
+      console.error(`DB 저장 오류 (${i}~${i+batch.length}):`,error);
+      if(statusEl)statusEl.textContent=`⚠️ 저장 오류 발생 - 재시도 중...`;
+      // 실패 시 더 작은 배치로 재시도
+      for(let j=0;j<batch.length;j+=200){
+        const mini=batch.slice(j,j+200);
+        const{error:e2}=await sb.from('pa_data').insert(mini);
+        if(e2)console.error('미니배치 저장 오류:',e2);
+        else saved+=mini.length;
+      }
+    } else {
+      saved+=batch.length;
+    }
+    if(statusEl)statusEl.textContent=`💾 DB 저장 중... ${saved.toLocaleString()}/${total.toLocaleString()}행`;
   }
-  console.log(`✅ ${month} 데이터 ${mapped.length}행 DB 저장 완료`);
+  if(statusEl)statusEl.textContent=`✅ ${month} ${total.toLocaleString()}행 저장 완료`;
+  console.log(`✅ ${month} 데이터 ${saved}/${total}행 DB 저장 완료`);
 }
 
-// DB에서 전체 데이터 로드 (1000행 제한 대응 페이징)
-async function loadFromDB(){
-  let allData=[];
-  let from=0;
-  const pageSize=1000;
-  while(true){
-    const{data,error}=await sb.from('pa_data').select('*').order('date_str',{ascending:true}).range(from,from+pageSize-1);
-    if(error){console.error('DB 로드 오류:',error);break;}
-    if(!data||data.length===0)break;
-    allData=allData.concat(data);
-    if(data.length<pageSize)break;
-    from+=pageSize;
-  }
-  console.log(`✅ DB에서 총 ${allData.length}행 로드`);
-  return allData;
+// ── RPC 호출 함수들 ──
+async function rpc(fn,params={}){
+  const{data,error}=await sb.rpc(fn,params);
+  if(error){console.error(`RPC ${fn} 오류:`,error);return null;}
+  return data;
 }
+
+// DB에서 일별 집계만 빠르게 로드 (6.5만행→수백행)
+async function loadFromDB(){
+  const statusEl=document.getElementById('hdSub');
+  if(statusEl)statusEl.textContent='📥 데이터 로드 중...';
+  
+  const daily=await rpc('get_daily_agg',{p_month:null});
+  if(!daily||!daily.length){
+    if(statusEl)statusEl.textContent='데이터를 업로드해주세요';
+    return[];
+  }
+  
+  // 일별 집계를 기존 row 형태로 변환
+  const rows=daily.map(r=>({
+    date_str:r.date_str,
+    campaign:'',
+    keyword:'',
+    product_name:'',
+    impressions:Number(r.imp)||0,
+    clicks:Number(r.clicks)||0,
+    spend:Number(r.spend)||0,
+    orders_14d:Number(r.orders)||0,
+    revenue_14d:Number(r.rev)||0,
+    file_month:r.date_str.slice(0,4)+'.'+r.date_str.slice(4,6)
+  }));
+  
+  if(statusEl)statusEl.textContent=`✅ ${daily.length}일 데이터 로드 완료`;
+  console.log(`⚡ 빠른 로드: ${daily.length}일 집계`);
+  return rows;
+}
+
+// 캠페인별 집계 로드 (차트/테이블용)
+async function loadCampAgg(dates){return await rpc('get_campaign_agg',{p_dates:dates})||[];}
+// 키워드 TOP 로드
+async function loadKwTop(dates,sort,limit){return await rpc('get_keyword_top',{p_dates:dates,p_sort:sort||'rev',p_limit:limit||10})||[];}
+// 상품 TOP 로드
+async function loadProdTop(dates,limit){return await rpc('get_product_top',{p_dates:dates,p_limit:limit||10})||[];}
+// 트렌드 데이터
+async function loadTrend(dates){return await rpc('get_trend',{p_dates:dates})||[];}
+// CPC 트렌드
+async function loadCpcTrend(dates){return await rpc('get_cpc_trend',{p_dates:dates})||[];}
+// 캠페인 목록
+async function loadCampList(){return await rpc('get_campaign_list')||[];}
+// CPC 키워드
+async function loadCpcKw(dates,limit){return await rpc('get_cpc_keywords',{p_dates:dates,p_limit:limit||30})||[];}
 
 // DB 데이터를 aF 형식으로 변환
 function dbToAF(data){
-  const byMonth={};
+  const byFile={};
   data.forEach(r=>{
+    const key=r.file_key||r.file_month;
     const m=r.file_month;
-    if(!byMonth[m])byMonth[m]=[];
-    byMonth[m].push({
+    if(!byFile[key])byFile[key]={month:m,rows:[]};
+    byFile[key].rows.push({
       '날짜':r.date_str,
       '캠페인명':r.campaign,
       '키워드':r.keyword,
@@ -542,6 +604,12 @@ function dbToAF(data){
       '총 주문수(14일)':r.orders_14d,
       '총 전환매출액(14일)':r.revenue_14d
     });
+  });
+  // 같은 month끼리 합치기
+  const byMonth={};
+  Object.values(byFile).forEach(f=>{
+    if(!byMonth[f.month])byMonth[f.month]=[];
+    byMonth[f.month]=byMonth[f.month].concat(f.rows);
   });
   return Object.keys(byMonth).sort().map(m=>({name:m+'.xlsx',month:m,rows:byMonth[m]}));
 }
@@ -634,7 +702,7 @@ function loadFile(file){
     aF.sort((a,b)=>a.month.localeCompare(b.month));
     cM='전체';
     // Supabase에 먼저 저장
-    saveToDB(ml,sheet).catch(err=>console.error('DB 저장 실패:',err));
+    saveToDB(ml,file.name,sheet).catch(err=>console.error('DB 저장 실패:',err));
     showDash();
     try{renderMain();}catch(e){console.error('renderMain 오류:',e);}
   };
@@ -799,11 +867,24 @@ function renderFcst(){
 }
 
 
-function renderMain(){
+async function renderMain(){
   const t=parseFloat(document.getElementById('roasT').value)||1000;
   document.getElementById('rtDisp').textContent=C(t)+'%';
-  renderChips();renderTabs();renderLastDate();renderKpi();renderTrend();renderCamp();renderKwTbl('rev');renderKwTbl('imp');renderProd();renderSpend();renderIns();renderH('main');if(fcstOpen)renderFcst();
-  // 현재 활성 탭이 cpc이면 즉시 렌더
+  // 즉시 렌더 (일별 집계 데이터로 가능한 것들)
+  renderChips();renderTabs();renderLastDate();renderKpi();renderTrend();renderH('main');if(fcstOpen)renderFcst();
+  
+  // RPC 비동기 렌더 (캠페인/키워드/상품 - 서버 집계)
+  const rows=getRows();
+  const{cur,prev}=getPer(rows,mainP,'main');
+  if(cur.length){
+    renderCamp();
+    renderKwTblRpc('rev',cur,prev,t);
+    renderKwTblRpc('imp',cur,prev,t);
+    renderProdRpc(cur,t);
+    renderSpendRpc(cur,t);
+    renderInsRpc(cur,prev,t);
+  }
+  
   try{
     const pgCpc=document.getElementById('pg-cpc');
     if(pgCpc&&pgCpc.style.display!=='none'){
@@ -812,6 +893,92 @@ function renderMain(){
       populateCpcSel();renderCpc();
     }
   }catch(e){console.error('CPC 렌더 오류:',e);}
+}
+
+// RPC 기반 키워드 테이블
+async function renderKwTblRpc(type,cur,prev,t){
+  const sk=type==='rev'?'rev':'imp';
+  const curD=await loadKwTop(cur,sk,10);
+  const prevD=prev.length?await loadKwTop(prev,sk,30):[];
+  if(!curD||!curD.length)return;
+  
+  const curKws=new Set(curD.map(d=>d.kw));
+  const pm={};(prevD||[]).forEach((d,i)=>pm[d.kw]=i+1);
+  const outKws=(prevD||[]).slice(0,10).filter(d=>!curKws.has(d.kw));
+  
+  const tid=type==='rev'?'kwRev':'kwImp';
+  document.querySelector('#'+tid+' thead').innerHTML=type==='rev'?'<tr><th>#</th><th>키워드</th><th>광고비</th><th>전환매출(14일)</th><th>ROAS</th><th>주문수(14일)</th><th>CVR</th><th>순위변동</th></tr>':'<tr><th>#</th><th>키워드</th><th>노출수</th><th>클릭수</th><th>CTR</th><th>광고비</th><th>ROAS</th><th>순위변동</th></tr>';
+  document.querySelector('#'+tid+' tbody').innerHTML=curD.map((d,i)=>{
+    const spend=Number(d.spend),rev=Number(d.rev),clicks=Number(d.clicks),imp=Number(d.imp),orders=Number(d.orders);
+    const roas=spend>0?rev/spend*100:0;const cvr=clicks>0?orders/clicks*100:0;
+    return type==='rev'?`<tr><td style="color:var(--text3)">${i+1}</td><td>${d.kw}</td><td style="font-family:'DM Mono',monospace">${fW(spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(rev)}</td><td><span class="bdg ${rC(roas,t)}">${C(Math.round(roas))}%</span></td><td>${fN(orders)}건</td><td>${cvr.toFixed(1)}%</td><td>${rBdg(d.kw,i+1,pm)}</td></tr>`:`<tr><td style="color:var(--text3)">${i+1}</td><td>${d.kw}</td><td>${fN(imp)}</td><td>${fN(clicks)}</td><td>${imp>0?(clicks/imp*100).toFixed(2):'0.00'}%</td><td>${fW(spend)}</td><td><span class="bdg ${rC(roas,t)}">${C(Math.round(roas))}%</span></td><td>${rBdg(d.kw,i+1,pm)}</td></tr>`;
+  }).join('');
+  
+  const outId=tid+'Out';
+  let outEl=document.getElementById(outId);
+  if(!outEl){const wrap=document.querySelector('#'+tid).closest('.card');const div=document.createElement('div');div.id=outId;div.style.marginTop='10px';wrap.appendChild(div);outEl=div;}
+  if(outKws.length&&prev.length){
+    outEl.innerHTML=`<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:5px;padding-top:8px;border-top:1px solid var(--border)">📤 OUT — 직전 기간 TOP10에서 이탈한 키워드</div>`+
+    outKws.map(d=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11.5px;color:var(--text3)"><span class="rd" style="font-size:10px">OUT</span><span>${d.kw}</span><span style="margin-left:auto;font-family:'DM Mono',monospace;font-size:11px">${type==='rev'?fW(Number(d.rev)):fN(Number(d.imp))}</span><span style="font-size:10px;color:var(--text3)">(직전 ${pm[d.kw]}위)</span></div>`).join('');
+  }else{outEl.innerHTML='';}
+}
+
+// RPC 기반 상품 테이블
+async function renderProdRpc(cur,t){
+  const data=await loadProdTop(cur,10);
+  if(!data||!data.length)return;
+  document.querySelector('#prodT thead').innerHTML='<tr><th>#</th><th>상품명</th><th>광고비</th><th>전환매출(14일)</th><th>ROAS</th><th>주문수(14일)</th></tr>';
+  document.querySelector('#prodT tbody').innerHTML=data.map((d,i)=>{
+    const spend=Number(d.spend),rev=Number(d.rev),orders=Number(d.orders);
+    const roas=spend>0?rev/spend*100:0;
+    const pname=(d.product||'(미분류)').slice(0,28);
+    return`<tr><td style="color:var(--text3)">${i+1}</td><td>${pname}</td><td>${fW(spend)}</td><td style="color:var(--green)">${fW(rev)}</td><td><span class="bdg ${rC(roas,t)}">${C(Math.round(roas))}%</span></td><td>${fN(orders)}건</td></tr>`;
+  }).join('');
+}
+
+// RPC 기반 광고비 배분
+async function renderSpendRpc(cur,t){
+  const campData=await loadCampAgg(cur);
+  if(!campData||!campData.length)return;
+  const sorted=campData.sort((a,b)=>Number(b.spend)-Number(a.spend)).slice(0,10);
+  const total=sorted.reduce((s,v)=>s+Number(v.spend),0);
+  const cols=['#3d8ef8','#00d4b4','#00e09a','#ffbe3d','#7c6af7','#ff8c42','#ff4466','#06b6d4','#a78bfa','#f472b6'];
+  document.querySelector('#spendT thead').innerHTML='<tr><th>캠페인명</th><th>광고비</th><th>비중</th><th>ROAS</th></tr>';
+  document.querySelector('#spendT tbody').innerHTML=sorted.map((v,i)=>{
+    const spend=Number(v.spend),rev=Number(v.rev);
+    const pct=total>0?spend/total*100:0;const roas=spend>0?rev/spend*100:0;
+    const k=v.campaign||'(미분류)';
+    return`<tr><td style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:${cols[i]||'#888'};display:inline-block;flex-shrink:0"></span>${k.length>20?k.slice(0,20)+'…':k}</td><td style="font-family:'DM Mono',monospace">${fW(spend)}</td><td><div style="display:flex;align-items:center;gap:5px"><span style="font-family:'DM Mono',monospace;font-size:11px">${pct.toFixed(1)}%</span><div class="prog-bg" style="width:50px"><div class="prog-fill" style="width:${pct.toFixed(1)}%;background:${cols[i]||'#888'}"></div></div></div></td><td><span class="bdg ${rC(roas,t)}">${C(Math.round(roas))}%</span></td></tr>`;
+  }).join('');
+  document.querySelector('#spendT tfoot').innerHTML=`<tr><td>합계</td><td style="font-family:'DM Mono',monospace">${fW(total)}</td><td>100%</td><td>-</td></tr>`;
+}
+
+// RPC 기반 인사이트 (간소화)
+async function renderInsRpc(cur,prev,t){
+  const c=aggR(getRows(),cur),p=aggR(getRows(),prev);
+  const campData=await loadCampAgg(cur);
+  if(!campData)return;
+  
+  const cl=campData.filter(v=>Number(v.spend)>10000).map(v=>({name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0,spend:Number(v.spend),rev:Number(v.rev)})).sort((a,b)=>b.roas-a.roas);
+  const topC=cl[0],botC=cl[cl.length-1];
+  
+  const goods=[],issues=[],recs=[];
+  if(pD(c.roas,p.roas)!==null&&pD(c.roas,p.roas)>0)goods.push(`ROAS <span class="hl">${Cp(c.roas)}</span> 상승 추세`);
+  if(topC)goods.push(`최고 ROAS: ${topC.name} <span class="hl">${C(Math.round(topC.roas))}%</span>`);
+  if(!goods.length)goods.push('이번 기간 특이 긍정 지표 없음');
+  
+  if(c.roas<t)issues.push(`ROAS ${Cp(c.roas)} — 목표(${C(t)}%) 미달`);
+  if(botC&&botC.roas<t*.3)issues.push(`저성과: ${botC.name} ROAS ${C(Math.round(botC.roas))}%`);
+  if(!issues.length)issues.push('특이 문제점 없음');
+  
+  if(c.roas<t)recs.push('ROAS 목표 미달 — 저성과 캠페인/키워드 점검 필요');
+  if(topC&&topC.roas>=t*2)recs.push(`${topC.name} 고성과 — 예산 비중 확대 검토`);
+  if(!recs.length)recs.push('현재 전략 유지 — 다음 기간 추이 모니터링 권장');
+  
+  document.getElementById('insRow').innerHTML=`
+    <div class="ins-card"><div class="ins-hd"><div class="ins-ico g">✅</div><div class="ins-ttl">잘 되고 있는 점</div></div>${goods.map(t=>`<div class="ins-item"><div class="dot g"></div><div>${t}</div></div>`).join('')}</div>
+    <div class="ins-card"><div class="ins-hd"><div class="ins-ico r">🔴</div><div class="ins-ttl">문제점 · 주의</div></div>${issues.map(t=>`<div class="ins-item"><div class="dot r"></div><div>${t}</div></div>`).join('')}</div>
+    <div class="ins-card"><div class="ins-hd"><div class="ins-ico b">💡</div><div class="ins-ttl">개선 제안</div></div>${recs.map(t=>`<div class="ins-item"><div class="dot b"></div><div>${t}</div></div>`).join('')}</div>`;
 }
 
 function renderChips(){document.getElementById('fchips').innerHTML=aF.map(f=>`<div class="chip">📄 ${f.month} (${f.rows.length.toLocaleString()}행)<span class="chip-x" onclick="removeFile('${f.month}')">✕</span></div>`).join('');}
@@ -873,22 +1040,30 @@ function renderTrend(){
   }
 }
 
-function renderCamp(){
+async function renderCamp(){
   const rows=getRows();const t=parseFloat(document.getElementById('roasT').value)||1000;
-  const{cur}=getPer(rows,mainP,'main');const fr=rows.filter(r=>cur.includes(String(r['날짜']||'')));
-  // 토글: 최근 30일 활성 캠페인만
+  const{cur}=getPer(rows,mainP,'main');
+  if(!cur.length)return;
+  
+  const campData=await loadCampAgg(cur);
+  if(!campData||!campData.length)return;
+  
   const activeOnly=document.getElementById('campActiveOnly')?.checked||false;
   const track=document.getElementById('campToggleTrack');const thumb=document.getElementById('campToggleThumb');
   if(track){track.style.background=activeOnly?'var(--accent)':'var(--border2)';}
   if(thumb){thumb.style.left=activeOnly?'18px':'2px';}
-  let activeCamps=null;
+  
+  let filtered=campData;
   if(activeOnly){
+    // 최근 30일 활성 캠페인만
     const allDates=getDates(rows);const last=allDates[allDates.length-1]||'';
-    const r30=allDates.filter(d=>{if(!last)return false;const a=new Date(last.slice(0,4),+last.slice(4,6)-1,+last.slice(6,8));const b=new Date(d.slice(0,4),+d.slice(4,6)-1,+d.slice(6,8));return(a-b)<=30*86400000;});
-    activeCamps=new Set(rows.filter(r=>r30.includes(String(r['날짜']||''))&&N(r['광고비'])>0).map(r=>(r['캠페인명']||'').trim()));
+    const r30=allDates.filter(d=>{if(!last)return false;const a=s2d(last),b=s2d(d);return(a-b)<=30*86400000;});
+    const r30camps=await loadCampAgg(r30);
+    const activeCamps=new Set((r30camps||[]).filter(c=>Number(c.spend)>0).map(c=>c.campaign));
+    filtered=campData.filter(c=>activeCamps.has(c.campaign));
   }
-  const byC={};fr.forEach(r=>{const c=(r['캠페인명']||'(미분류)').trim();if(activeOnly&&activeCamps&&!activeCamps.has(c))return;if(!byC[c])byC[c]={spend:0,rev:0};byC[c].spend+=N(r['광고비']);byC[c].rev+=N(r['총 전환매출액(14일)']);});
-  const sorted=Object.entries(byC).filter(([,v])=>v.spend>10000).map(([k,v])=>({name:k,roas:v.spend>0?v.rev/v.spend*100:0})).sort((a,b)=>b.roas-a.roas).slice(0,12);
+  
+  const sorted=filtered.filter(v=>Number(v.spend)>10000).map(v=>({name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0})).sort((a,b)=>b.roas-a.roas).slice(0,12);
   const cols=sorted.map(d=>d.roas>=t?'rgba(0,224,154,.3)':d.roas>=t*.5?'rgba(255,190,61,.3)':'rgba(255,68,102,.3)');
   const bc=sorted.map(d=>d.roas>=t?'#00e09a':d.roas>=t*.5?'#ffbe3d':'#ff4466');
   if(CH.camp)CH.camp.destroy();
@@ -1666,8 +1841,8 @@ renderH('main');renderH('cpc');
       aF=dbToAF(data);
       cM='전체';
       showDash();
-      try{renderMain();}catch(e){console.error('renderMain 오류:',e);}
-      console.log(`✅ DB에서 ${data.length}행 로드 완료`);
+      try{await renderMain();}catch(e){console.error('renderMain 오류:',e);}
+      console.log(`✅ DB 로드 완료`);
     }
     const hist=await loadHistDB();
     if(hist.main.length){mainHist=hist.main;localStorage.setItem('pa_hist',JSON.stringify(mainHist));renderH('main');}
