@@ -11,7 +11,7 @@
 <style>
 [data-theme="dark"]{--bg:#07111f;--surf:#0d1c30;--surf2:#122238;--surf3:#162840;--border:#1a3050;--border2:#1e3860;--accent:#3d8ef8;--accent2:#00d4b4;--accent3:#7c6af7;--green:#00e09a;--yellow:#ffbe3d;--red:#ff4466;--orange:#ff8c42;--text:#e8f0fe;--text2:#7a9abf;--text3:#304560;--cs:0 2px 12px rgba(0,0,0,.3);}
 [data-theme="light"]{--bg:#f0f4fa;--surf:#fff;--surf2:#f5f7fc;--surf3:#edf1f9;--border:#d0daea;--border2:#b8ccdf;--accent:#1a6ef5;--accent2:#00a896;--accent3:#6c5ce7;--green:#00875a;--yellow:#b45309;--red:#dc2626;--orange:#c05a00;--text:#0d1f36;--text2:#3d5c7a;--text3:#8ba4be;--cs:0 2px 12px rgba(0,0,0,.07);}
-*{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;zoom:1.25;}
+*{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;zoom:1.25;-moz-transform:scale(1.25);-moz-transform-origin:0 0;}
 body{background:var(--bg);color:var(--text);font-family:"Pretendard",sans-serif;min-height:100vh;transition:background .3s,color .3s;font-size:14px;}
 [data-theme="dark"] body::before{content:"";position:fixed;inset:0;background:radial-gradient(ellipse 90% 60% at 15% 0%,rgba(61,142,248,.07) 0%,transparent 55%),radial-gradient(ellipse 70% 50% at 85% 100%,rgba(0,212,180,.05) 0%,transparent 55%);pointer-events:none;z-index:0;}
 ::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:var(--surf);}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
@@ -797,10 +797,9 @@ function renderMain(){
     document.getElementById('cpcDash').style.display='block';
     populateCpcSel();renderCpc();
   }
-  if(document.getElementById('pg-man').style.display!=='none'){
-    document.getElementById('manEmpty').style.display='none';
-    document.getElementById('manDash').style.display='block';
-    renderMan();
+  if(document.getElementById('pg-man')&&document.getElementById('pg-man').style.display!=='none'){
+    if(document.getElementById('manEmpty'))document.getElementById('manEmpty').style.display='none';
+    if(document.getElementById('manDash')){document.getElementById('manDash').style.display='block';renderMan();}
   }
 }
 
