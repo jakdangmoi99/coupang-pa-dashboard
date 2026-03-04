@@ -586,6 +586,34 @@ async function loadCampList(){return await rpc('get_campaign_list')||[];}
 // CPC 키워드
 async function loadCpcKw(dates,limit){return await rpc('get_cpc_keywords',{p_dates:dates,p_limit:limit||30})||[];}
 
+// CPC 탭용 상세 데이터 캐시
+let cpcDetailCache=null;
+let cpcDetailMonth=null;
+
+async function loadCpcDetail(month){
+  if(cpcDetailCache&&cpcDetailMonth===month)return cpcDetailCache;
+  const statusEl=document.getElementById('hdSub');
+  if(statusEl)statusEl.textContent='📥 CPC 상세 데이터 로드 중...';
+  const data=await rpc('get_cpc_detail',{p_month:month||null});
+  if(!data){if(statusEl)statusEl.textContent='CPC 데이터 로드 실패';return[];}
+  // 대시보드가 기대하는 한글 키 형태로 변환
+  cpcDetailCache=data.map(r=>({
+    '날짜':r.date_str,
+    '캠페인명':r.campaign||'',
+    '키워드':r.keyword||'',
+    '광고집행 상품명':'',
+    '노출수':Number(r.imp)||0,
+    '클릭수':Number(r.clicks)||0,
+    '광고비':Number(r.spend)||0,
+    '총 주문수(14일)':Number(r.orders)||0,
+    '총 전환매출액(14일)':Number(r.rev)||0
+  }));
+  cpcDetailMonth=month;
+  if(statusEl)statusEl.textContent=`✅ CPC 데이터 ${cpcDetailCache.length}행 로드`;
+  console.log(`⚡ CPC 상세: ${cpcDetailCache.length}행 로드`);
+  return cpcDetailCache;
+}
+
 // DB 데이터를 aF 형식으로 변환
 function dbToAF(data){
   const byFile={};
@@ -667,7 +695,7 @@ function switchPage(pg,el){
     const hasData=aF.length>0;
     document.getElementById('cpcEmpty').style.display=hasData?'none':'flex';
     document.getElementById('cpcDash').style.display=hasData?'block':'none';
-    if(hasData){populateCpcSel();renderCpc();}
+    if(hasData){populateCpcSel().then(()=>renderCpc());}
   }
 }
 
@@ -890,7 +918,7 @@ async function renderMain(){
     if(pgCpc&&pgCpc.style.display!=='none'){
       document.getElementById('cpcEmpty').style.display='none';
       document.getElementById('cpcDash').style.display='block';
-      populateCpcSel();renderCpc();
+      populateCpcSel().then(()=>renderCpc());
     }
   }catch(e){console.error('CPC 렌더 오류:',e);}
 }
@@ -1280,19 +1308,20 @@ function toggleKwMore(){
   renderCpcKwTbl(rows,cur);
 }
 
-function populateCpcSel(){
+async function populateCpcSel(){
+  // CPC 상세 데이터 로드 (캠페인+키워드 레벨)
+  await loadCpcDetail(null);
+  
   cpcAutoList=[];cpcManList=[];cpcAutoSel=[];cpcManSel=[];
-  const rows=aF.flatMap(f=>f.rows);
+  const rows=getCpcRows();
   const allDates=getDates(rows);
   const last=allDates[allDates.length-1]||'';
-  // 최근 30일 날짜 계산
   const recent30=allDates.filter(d=>{
     if(!last||d.length!==8)return false;
     const a=new Date(last.slice(0,4),+last.slice(4,6)-1,+last.slice(6,8));
     const b=new Date(d.slice(0,4),+d.slice(4,6)-1,+d.slice(6,8));
     return(a-b)<=30*86400000;
   });
-  // 최근 30일 내 실적(광고비>0)있는 캠페인만
   const activeCamps=new Set(rows.filter(r=>recent30.includes(String(r['날짜']||''))&&N(r['광고비'])>0).map(r=>(r['캠페인명']||'').trim()).filter(Boolean));
   const camps=[...activeCamps].sort();
   const manKw=['수동','manual'];
@@ -1342,6 +1371,11 @@ function renderCpcMonthTabs(){
 function swCpcM(m){cpcMonth=m;renderCpc();}
 
 function getCpcRows(){
+  // CPC 캐시가 있으면 사용
+  if(cpcDetailCache&&cpcDetailCache.length){
+    if(cpcMonth==='전체')return cpcDetailCache;
+    return cpcDetailCache.filter(r=>{const d=String(r['날짜']||'');return d.length>=6&&(d.slice(0,4)+'.'+d.slice(4,6))===cpcMonth;});
+  }
   if(cpcMonth==='전체')return aF.flatMap(f=>f.rows);
   const f=aF.find(f=>f.month===cpcMonth);return f?f.rows:[];
 }
