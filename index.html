@@ -11,17 +11,17 @@
 <style>
 [data-theme="dark"]{--bg:#07111f;--surf:#0d1c30;--surf2:#122238;--surf3:#162840;--border:#1a3050;--border2:#1e3860;--accent:#3d8ef8;--accent2:#00d4b4;--accent3:#7c6af7;--green:#00e09a;--yellow:#ffbe3d;--red:#ff4466;--orange:#ff8c42;--text:#e8f0fe;--text2:#7a9abf;--text3:#304560;--cs:0 2px 12px rgba(0,0,0,.3);}
 [data-theme="light"]{--bg:#f0f4fa;--surf:#fff;--surf2:#f5f7fc;--surf3:#edf1f9;--border:#d0daea;--border2:#b8ccdf;--accent:#1a6ef5;--accent2:#00a896;--accent3:#6c5ce7;--green:#00875a;--yellow:#b45309;--red:#dc2626;--orange:#c05a00;--text:#0d1f36;--text2:#3d5c7a;--text3:#8ba4be;--cs:0 2px 12px rgba(0,0,0,.07);}
-*{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;zoom:1.25;-moz-transform:scale(1.25);-moz-transform-origin:0 0;}
+*{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;}
 body{background:var(--bg);color:var(--text);font-family:"Pretendard",sans-serif;min-height:100vh;transition:background .3s,color .3s;font-size:14px;}
 [data-theme="dark"] body::before{content:"";position:fixed;inset:0;background:radial-gradient(ellipse 90% 60% at 15% 0%,rgba(61,142,248,.07) 0%,transparent 55%),radial-gradient(ellipse 70% 50% at 85% 100%,rgba(0,212,180,.05) 0%,transparent 55%);pointer-events:none;z-index:0;}
 ::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:var(--surf);}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
-.app{max-width:1600px;margin:0 auto;padding:20px 24px 60px;position:relative;z-index:1;}
+.app{max-width:1600px;margin:0 auto;padding:20px 24px 60px;position:relative;z-index:1;overflow-x:hidden;}
 /* HEADER */
 header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;padding-bottom:14px;border-bottom:1px solid var(--border);flex-wrap:wrap;gap:10px;}
 .hd-left{display:flex;align-items:center;gap:12px;}
 .logo{width:40px;height:40px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:19px;flex-shrink:0;}
-.hd-title h1{font-size:20px;font-weight:800;letter-spacing:-.3px;}
-.hd-title p{font-size:13px;color:var(--text3);margin-top:2px;font-family:"DM Mono",monospace;}
+.hd-title h1{font-size:22px;font-weight:800;letter-spacing:-.3px;}
+.hd-title p{font-size:14px;color:var(--text3);margin-top:2px;font-family:"DM Mono",monospace;}
 .hd-right{display:flex;align-items:center;gap:7px;flex-wrap:wrap;}
 .last-date{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:13px;color:var(--text2);font-family:"DM Mono",monospace;}
 .last-date b{color:var(--accent2);}
@@ -88,11 +88,11 @@ header{display:flex;align-items:center;justify-content:space-between;margin-bott
 .tdn{background:rgba(255,68,102,.12);color:var(--red);}
 .tneu{background:rgba(122,154,191,.1);color:var(--text2);}
 /* GRID */
-.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;}
-.grid21{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-bottom:12px;}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px;min-width:0;}
+.grid21{display:grid;grid-template-columns:1.6fr 1fr;gap:12px;margin-bottom:12px;min-width:0;}
 /* CARD */
-.card{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:17px;box-shadow:var(--cs);animation:up .4s ease .1s forwards;opacity:0;transform:translateY(8px);}
-.card-full{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:17px;box-shadow:var(--cs);margin-bottom:12px;}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:17px;box-shadow:var(--cs);animation:up .4s ease .1s forwards;opacity:0;transform:translateY(8px);overflow:hidden;min-width:0;}
+.card-full{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:17px;box-shadow:var(--cs);margin-bottom:12px;overflow:hidden;min-width:0;}
 .card-hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:13px;gap:8px;}
 .card-ttl{font-size:15px;font-weight:700;}
 .card-sub{font-size:12px;color:var(--text3);margin-top:2px;}
@@ -102,6 +102,7 @@ header{display:flex;align-items:center;justify-content:space-between;margin-bott
 .tbtn.on2{background:var(--accent3);color:#fff;}
 /* TABLE */
 .tbl-wrap{overflow-x:auto;}
+canvas{max-width:100%;height:auto!important;}
 table{width:100%;border-collapse:collapse;font-size:13px;}
 thead th{padding:8px 9px;font-size:12px;font-weight:700;color:var(--text3);text-transform:uppercase;letter-spacing:.5px;border-bottom:1px solid var(--border);text-align:left;white-space:nowrap;}
 tbody tr{border-bottom:1px solid rgba(26,48,80,.3);transition:background .15s;}
@@ -507,11 +508,21 @@ async function saveToDB(month,rows){
   console.log(`✅ ${month} 데이터 ${mapped.length}행 DB 저장 완료`);
 }
 
-// DB에서 전체 데이터 로드
+// DB에서 전체 데이터 로드 (1000행 제한 대응 페이징)
 async function loadFromDB(){
-  const{data,error}=await sb.from('pa_data').select('*').order('date_str',{ascending:true});
-  if(error){console.error('DB 로드 오류:',error);return[];}
-  return data||[];
+  let allData=[];
+  let from=0;
+  const pageSize=1000;
+  while(true){
+    const{data,error}=await sb.from('pa_data').select('*').order('date_str',{ascending:true}).range(from,from+pageSize-1);
+    if(error){console.error('DB 로드 오류:',error);break;}
+    if(!data||data.length===0)break;
+    allData=allData.concat(data);
+    if(data.length<pageSize)break;
+    from+=pageSize;
+  }
+  console.log(`✅ DB에서 총 ${allData.length}행 로드`);
+  return allData;
 }
 
 // DB 데이터를 aF 형식으로 변환
@@ -622,9 +633,10 @@ function loadFile(file){
     aF.push({name:file.name,month:ml,rows:sheet});
     aF.sort((a,b)=>a.month.localeCompare(b.month));
     cM='전체';
-    showDash();renderMain();
-    // Supabase에 저장
+    // Supabase에 먼저 저장
     saveToDB(ml,sheet).catch(err=>console.error('DB 저장 실패:',err));
+    showDash();
+    try{renderMain();}catch(e){console.error('renderMain 오류:',e);}
   };
   reader.readAsArrayBuffer(file);
 }
@@ -791,16 +803,15 @@ function renderMain(){
   const t=parseFloat(document.getElementById('roasT').value)||1000;
   document.getElementById('rtDisp').textContent=C(t)+'%';
   renderChips();renderTabs();renderLastDate();renderKpi();renderTrend();renderCamp();renderKwTbl('rev');renderKwTbl('imp');renderProd();renderSpend();renderIns();renderH('main');if(fcstOpen)renderFcst();
-  // 현재 활성 탭이 cpc/man이면 즉시 렌더
-  if(document.getElementById('pg-cpc').style.display!=='none'){
-    document.getElementById('cpcEmpty').style.display='none';
-    document.getElementById('cpcDash').style.display='block';
-    populateCpcSel();renderCpc();
-  }
-  if(document.getElementById('pg-man')&&document.getElementById('pg-man').style.display!=='none'){
-    if(document.getElementById('manEmpty'))document.getElementById('manEmpty').style.display='none';
-    if(document.getElementById('manDash')){document.getElementById('manDash').style.display='block';renderMan();}
-  }
+  // 현재 활성 탭이 cpc이면 즉시 렌더
+  try{
+    const pgCpc=document.getElementById('pg-cpc');
+    if(pgCpc&&pgCpc.style.display!=='none'){
+      document.getElementById('cpcEmpty').style.display='none';
+      document.getElementById('cpcDash').style.display='block';
+      populateCpcSel();renderCpc();
+    }
+  }catch(e){console.error('CPC 렌더 오류:',e);}
 }
 
 function renderChips(){document.getElementById('fchips').innerHTML=aF.map(f=>`<div class="chip">📄 ${f.month} (${f.rows.length.toLocaleString()}행)<span class="chip-x" onclick="removeFile('${f.month}')">✕</span></div>`).join('');}
@@ -1650,15 +1661,14 @@ renderH('main');renderH('cpc');
 // 페이지 로드 시 Supabase에서 데이터 자동 로드
 (async function initFromDB(){
   try{
-    // 데이터 로드
     const data=await loadFromDB();
     if(data.length){
       aF=dbToAF(data);
       cM='전체';
-      showDash();renderMain();
+      showDash();
+      try{renderMain();}catch(e){console.error('renderMain 오류:',e);}
       console.log(`✅ DB에서 ${data.length}행 로드 완료`);
     }
-    // 히스토리 로드
     const hist=await loadHistDB();
     if(hist.main.length){mainHist=hist.main;localStorage.setItem('pa_hist',JSON.stringify(mainHist));renderH('main');}
     if(hist.cpc.length){cpcHist=hist.cpc;localStorage.setItem('pa_cpc_hist',JSON.stringify(cpcHist));renderH('cpc');}
