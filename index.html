@@ -487,9 +487,8 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
 // DB에 엑셀 데이터 저장
 async function saveToDB(month,fileName,rows){
-  const fileKey=fileName.replace(/[^a-zA-Z0-9가-힣_.()-]/g,'_');
-  // 해당 파일 데이터만 삭제 (file_key 기준)
-  const{error:delErr}=await sb.from('pa_data').delete().eq('file_key',fileKey);
+  // 같은 월 데이터 통째로 삭제 후 새로 저장 (중복 방지)
+  const{error:delErr}=await sb.from('pa_data').delete().eq('file_month',month);
   if(delErr)console.error('DB 삭제 오류:',delErr);
 
   const mapped=rows.map(r=>({
@@ -502,8 +501,7 @@ async function saveToDB(month,fileName,rows){
     spend:parseFloat(String(r['광고비']||0).replace(/[,%]/g,''))||0,
     orders_14d:parseFloat(String(r['총 주문수(14일)']||0).replace(/[,%]/g,''))||0,
     revenue_14d:parseFloat(String(r['총 전환매출액(14일)']||0).replace(/[,%]/g,''))||0,
-    file_month:month,
-    file_key:fileKey
+    file_month:month
   }));
 
   // 진행상황 표시
@@ -518,7 +516,6 @@ async function saveToDB(month,fileName,rows){
     if(error){
       console.error(`DB 저장 오류 (${i}~${i+batch.length}):`,error);
       if(statusEl)statusEl.textContent=`⚠️ 저장 오류 발생 - 재시도 중...`;
-      // 실패 시 더 작은 배치로 재시도
       for(let j=0;j<batch.length;j+=200){
         const mini=batch.slice(j,j+200);
         const{error:e2}=await sb.from('pa_data').insert(mini);
