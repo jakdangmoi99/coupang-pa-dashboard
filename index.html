@@ -498,6 +498,17 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 
     <!-- ⑧ 인사이트 -->
     <div class="ins-row3" id="cpcInsRow"></div>
+    <!-- CPC 변경 히스토리 -->
+    <div class="hist-sec">
+      <div style="margin-bottom:10px"><div class="card-ttl">🎯 CPC 변경 히스토리</div><div class="card-sub" style="margin-top:2px">CPC 입찰가 변경 기록</div></div>
+      <div class="hist-form">
+        <input type="date" class="h-date" id="cpcHiDate2"/>
+        <select class="h-type" id="cpcHiType2"><option>CPC변경</option><option>입찰가변경</option><option>캠페인변경</option><option>기타</option></select>
+        <input type="text" class="h-desc" id="cpcHiDesc2" placeholder="변경 내용 (예: 건전지 aa 수동 CPC 230→200원)"/>
+        <button class="btn btn-pr" onclick="addH('cpc')">+ 추가</button>
+      </div>
+      <div class="hist-list" id="cpcHList2"></div>
+    </div>
 
   </div>
 </div>
@@ -565,10 +576,19 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     </div>
     <!-- 인사이트 -->
     <div class="ins-row3" id="campInsRow"></div>
+    <!-- 캠페인 변경 히스토리 -->
+    <div class="hist-sec">
+      <div style="margin-bottom:10px"><div class="card-ttl">📋 캠페인 변경 히스토리</div><div class="card-sub" style="margin-top:2px">광고 운영 주요 변경사항 기록</div></div>
+      <div class="hist-form">
+        <input type="date" class="h-date" id="campHiDate"/>
+        <select class="h-type" id="campHiType"><option>캠페인변경</option><option>예산조정</option><option>입찰가변경</option><option>기타</option></select>
+        <input type="text" class="h-desc" id="campHiDesc" placeholder="변경 내용 (예: 온라인팩_매출최적화 예산 20% 증액)"/>
+        <button class="btn btn-pr" onclick="addH('main')">+ 추가</button>
+      </div>
+      <div class="hist-list" id="campHList"></div>
+    </div>
   </div>
 </div>
-
-<!-- ══════════ REPORT / HISTORY PAGE ══════════ -->
 <div id="pg-report" style="display:none">
   <div class="hist-sec">
     <div style="margin-bottom:10px"><div class="card-ttl">📋 캠페인 변경 히스토리</div><div class="card-sub" style="margin-top:2px">광고 운영 주요 변경사항 기록</div></div>
@@ -2039,9 +2059,13 @@ function delH(page,id){
 }
 function renderH(page){
   const arr=page==='main'?mainHist:cpcHist;
-  const el=document.getElementById(page==='main'?'hList':'cpcHList');
-  if(!arr.length){el.innerHTML='<div style="text-align:center;padding:12px;color:var(--text3);font-size:12px">아직 기록된 변경사항이 없습니다</div>';return;}
-  el.innerHTML=arr.map(h=>`<div class="hist-item ${h.type}"><span class="h-db">${h.date}</span><span class="h-tb">${h.type}</span><span class="h-desc-t">${h.desc}</span><span class="h-del" onclick="delH('${page}',${h.id})">✕</span></div>`).join('');
+  const html=!arr.length?'<div style="text-align:center;padding:12px;color:var(--text3);font-size:12px">아직 기록된 변경사항이 없습니다</div>':arr.map(h=>`<div class="hist-item ${h.type}"><span class="h-db">${h.date}</span><span class="h-tb">${h.type}</span><span class="h-desc-t">${h.desc}</span><span class="h-del" onclick="delH('${page}',${h.id})">✕</span></div>`).join('');
+  // 같은 히스토리를 여러 곳에 동시 렌더링
+  if(page==='main'){
+    ['hList','campHList'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=html;});
+  }else{
+    ['cpcHList','cpcHList2'].forEach(id=>{const el=document.getElementById(id);if(el)el.innerHTML=html;});
+  }
 }
 
 // ════════════ CAMPAIGN ANALYSIS PAGE ════════════
@@ -2101,6 +2125,7 @@ function renderDetailProd(prods,campName){if(!prods.length){document.querySelect
 document.getElementById('hiDate').value=new Date().toISOString().slice(0,10);
 document.getElementById('cpcHiDate').value=new Date().toISOString().slice(0,10);
 const campHiDateEl=document.getElementById('campHiDate');if(campHiDateEl)campHiDateEl.value=new Date().toISOString().slice(0,10);
+const cpcHiDate2El=document.getElementById('cpcHiDate2');if(cpcHiDate2El)cpcHiDate2El.value=new Date().toISOString().slice(0,10);
 renderH('main');renderH('cpc');
 
 // 페이지 로드 시 Supabase에서 데이터 자동 로드
