@@ -107,8 +107,8 @@ header{display:flex;align-items:center;justify-content:space-between;margin-bott
 .card{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:17px;box-shadow:var(--cs);animation:up .4s ease .1s forwards;opacity:0;transform:translateY(8px);overflow:hidden;min-width:0;}
 .card-full{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:17px;box-shadow:var(--cs);margin-bottom:12px;overflow:hidden;min-width:0;}
 .card-hd{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:13px;gap:8px;}
-.card-ttl{font-size:15px;font-weight:700;}
-.card-sub{font-size:12px;color:var(--text3);margin-top:2px;}
+.card-ttl{font-size:16px;font-weight:800;}
+.card-sub{font-size:13px;color:var(--text3);margin-top:2px;font-weight:500;}
 .tog{display:flex;gap:3px;background:var(--surf2);border-radius:6px;padding:3px;flex-shrink:0;}
 .tbtn{padding:4px 10px;border-radius:4px;font-size:13px;font-weight:600;cursor:pointer;border:none;background:transparent;color:var(--text3);transition:all .2s;}
 .tbtn.on{background:var(--accent);color:#fff;}
@@ -268,7 +268,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     </div>
     <div class="bar">
       <label>🎯 ROAS 목표치</label>
-      <input class="roas-inp" type="number" id="roasT" value="1000" min="0" step="100" onchange="renderMain()"/>
+      <input class="roas-inp" type="number" id="roasT" value="1000" min="0" step="100" onchange="renderMain();if(typeof renderCampPage==='function')renderCampPage()"/>
       <span style="font-size:12px;color:var(--text2);font-family:'DM Mono',monospace">%</span>
       <span class="rt-hint">현재 <b id="rtDisp">1,000%</b> — 차트 기준선 및 색상 코딩에 반영</span>
     </div>
@@ -1128,7 +1128,7 @@ async function renderProdRpc(cur,prev,t){
   if(!outEl){const wrap=document.querySelector('#prodT').closest('.card-full');if(!wrap)return;const div=document.createElement('div');div.id=outId;div.style.marginTop='10px';wrap.appendChild(div);outEl=div;}
   if(outProds.length&&prev.length){
     outEl.innerHTML=`<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:5px;padding-top:8px;border-top:1px solid var(--border)">📤 OUT — 직전 기간 TOP10에서 이탈한 제품</div>`+
-    outProds.map(d=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11.5px;color:var(--text3)"><span class="rd" style="font-size:10px">OUT</span><span style="max-width:200px;white-space:normal;word-break:break-all">${d.product}</span><span style="margin-left:auto;font-family:'DM Mono',monospace;font-size:11px">${fW(Number(d.rev))}</span><span style="font-size:10px;color:var(--text3)">(직전 ${pm[d.product]}위)</span></div>`).join('');
+    outProds.map(d=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11.5px;color:var(--text3)"><span class="rd" style="font-size:10px">OUT</span><span style="white-space:nowrap">${d.product}</span><span style="margin-left:auto;font-family:'DM Mono',monospace;font-size:11px">${fW(Number(d.rev))}</span><span style="font-size:10px;color:var(--text3)">(직전 ${pm[d.product]}위)</span></div>`).join('');
   }else{outEl.innerHTML='';}
 }
 
@@ -1260,9 +1260,9 @@ async function renderCamp(){
     filtered=campData.filter(c=>activeCamps.has(c.campaign));
   }
   
-  const sorted=filtered.filter(v=>Number(v.spend)>10000).map(v=>({name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0})).sort((a,b)=>b.roas-a.roas).slice(0,12);
-  const cols=sorted.map(d=>d.roas>=t?'rgba(0,224,154,.3)':d.roas>=t*.5?'rgba(255,190,61,.3)':'rgba(255,68,102,.3)');
-  const bc=sorted.map(d=>d.roas>=t?'#00e09a':d.roas>=t*.5?'#ffbe3d':'#ff4466');
+  const sorted=filtered.filter(v=>Number(v.spend)>10000).map(v=>{const campT=typeof getCampTarget==='function'?getCampTarget(v.campaign):t;return{name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0,target:campT};}).sort((a,b)=>b.roas-a.roas).slice(0,12);
+  const cols=sorted.map(d=>d.roas>=d.target?'rgba(0,224,154,.3)':d.roas>=d.target*.5?'rgba(255,190,61,.3)':'rgba(255,68,102,.3)');
+  const bc=sorted.map(d=>d.roas>=d.target?'#00e09a':d.roas>=d.target*.5?'#ffbe3d':'#ff4466');
   if(CH.camp)CH.camp.destroy();
   const ctx=document.getElementById('cChart').getContext('2d');
   CH.camp=new Chart(ctx,{type:'bar',data:{labels:sorted.map(d=>d.name.length>14?d.name.slice(0,14)+'…':d.name),datasets:[{data:sorted.map(d=>parseFloat(d.roas.toFixed(1))),backgroundColor:cols,borderColor:bc,borderWidth:1.5,borderRadius:4,borderSkipped:false}]},
@@ -1610,6 +1610,10 @@ function renderCpc(){
     else{kwObj[t].s+=spend;kwObj[t].c+=clicks;kwObj[t].r+=rev;}
   };
   fr.forEach(r=>classifyRow(r,kwAgg,nsAgg,rtAgg));
+  // 디버깅: 광고 노출 지면 값 확인
+  const placements=[...new Set(fr.map(r=>(r['광고 노출 지면']||'').trim()).filter(Boolean))];
+  console.log('📋 CPC 광고 노출 지면 종류:',placements);
+  console.log('📋 리타겟팅 집계:',rtAgg);
   rows.filter(r=>prev.includes(String(r['날짜']||''))).forEach(r=>classifyRow(r,kwPrev,nsPrev,rtPrev));
   const mkCpc=(s,c)=>c>0?s/c:0;
   const mkRoas=(s,r)=>s>0?r/s*100:0;
