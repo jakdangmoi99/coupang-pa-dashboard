@@ -135,7 +135,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 .rd{background:rgba(255,68,102,.12);color:var(--red);font-size:10px;font-weight:700;padding:2px 5px;border-radius:4px;}
 .rec-tag{background:rgba(0,212,180,.12);color:var(--accent2);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;}
 /* INSIGHTS */
-.ins-row3{display:grid;grid-template-columns:repeat(3,1fr);gap:11px;margin-bottom:12px;}
+.ins-row3{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:12px;}
 .ins-row4{display:grid;grid-template-columns:repeat(4,1fr);gap:11px;margin-bottom:12px;}
 .ins-card{background:var(--surf);border:1px solid var(--border);border-radius:12px;padding:14px;box-shadow:var(--cs);display:flex;flex-direction:column;}
 .ins-hd{display:flex;align-items:center;gap:7px;margin-bottom:10px;}
@@ -321,7 +321,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
           <div style="display:flex;align-items:center;gap:6px">
             <span style="font-size:11px;color:var(--text3)">비활성 제외</span>
             <label style="position:relative;display:inline-block;width:36px;height:20px;cursor:pointer">
-              <input type="checkbox" id="campActiveOnly" onchange="renderCamp()" style="opacity:0;width:0;height:0">
+              <input type="checkbox" id="campActiveOnly" onchange="renderCamp()" checked style="opacity:0;width:0;height:0">
               <span id="campToggleTrack" style="position:absolute;inset:0;background:var(--border2);border-radius:10px;transition:.2s"></span>
               <span id="campToggleThumb" style="position:absolute;left:2px;top:2px;width:16px;height:16px;background:#fff;border-radius:50%;transition:.2s"></span>
             </label>
@@ -1180,162 +1180,128 @@ async function renderSpendRpc(cur,t){
 }
 
 // RPC 기반 인사이트 (간소화)
-// ══════ INSIGHT ENGINE v2 ══════
-// 공통 유틸
+
+// ══════ INSIGHT ENGINE v3 — 2박스: 성과 요약 + 액션 아이템 ══════
 function isHoliday(d8){const dk=`${d8.slice(0,4)}-${d8.slice(4,6)}-${d8.slice(6,8)}`;return HOL[dk]||null;}
-function getDayName(d8){const d=s2d(d8);return['일','월','화','수','목','금','토'][d.getDay()];}
+function getDayName(d8){return['일','월','화','수','목','금','토'][s2d(d8).getDay()];}
 function stdDev(arr){if(arr.length<3)return 0;const m=arr.reduce((a,b)=>a+b,0)/arr.length;return Math.sqrt(arr.reduce((a,b)=>a+(b-m)**2,0)/arr.length);}
-function insTag(level,text){const cls=level==='즉시 조치'?'tdn':level==='모니터링'?'tup':'tneu';return`<span class="tag ${cls}" style="font-size:10px;margin-right:4px">${level}</span> ${text}`;}
+function insTag(level){const cls=level==='즉시 조치'?'tdn':level==='모니터링'?'tup':'tneu';return`<span class="tag ${cls}" style="font-size:10px;margin-right:4px">${level}</span>`;}
 
-// 모듈1: 추세 연속성 (일별 데이터 기반)
-function mod1Trend(rows,cur){
-  const ins=[];
-  const daily={};
-  rows.filter(r=>cur.includes(String(r['날짜']||''))).forEach(r=>{const d=String(r['날짜']||'');if(!daily[d])daily[d]={s:0,r:0,c:0};daily[d].s+=N(r['광고비']);daily[d].r+=N(r['총 전환매출액(14일)']);daily[d].c+=N(r['클릭수']);});
-  const dates=Object.keys(daily).sort();if(dates.length<4)return ins;
-  const roasArr=dates.map(d=>daily[d].s>0?daily[d].r/daily[d].s*100:0);
-  // 연속 상승/하락 체크
-  let streak=0,dir=0;
-  for(let i=1;i<roasArr.length;i++){
-    const d=roasArr[i]-roasArr[i-1];
-    if(d>0){if(dir>=0){streak++;dir=1;}else{streak=1;dir=1;}}
-    else if(d<0){if(dir<=0){streak++;dir=-1;}else{streak=1;dir=-1;}}
-    else{streak=0;dir=0;}
-  }
-  if(streak>=3&&dir>0)ins.push({g:'good',t:insTag('모니터링',`광고수익률 ${streak}일 연속 상승 추세 — 현재 전략 유지`)});
-  if(streak>=3&&dir<0)ins.push({g:'issue',t:insTag('즉시 조치',`광고수익률 ${streak}일 연속 하락 중 (${C(Math.round(roasArr[roasArr.length-streak-1]))}% → ${C(Math.round(roasArr[roasArr.length-1]))}%) — 키워드/캠페인별 효율 점검 필요`)});
-  return ins;
+function renderInsBox(elId,summary,actions){
+  const el=document.getElementById(elId);if(!el)return;
+  if(!summary.length)summary.push({icon:'ℹ️',t:'분석할 데이터가 부족합니다.'});
+  if(!actions.length)actions.push({tag:'참고',t:'현재 전략 유지 — 다음 기간 추이 모니터링 권장'});
+  el.innerHTML=`
+    <div class="ins-card"><div class="ins-hd"><div class="ins-ico g">📊</div><div class="ins-ttl">성과 요약</div></div>${summary.map(s=>`<div class="ins-item"><div>${s.icon||'•'}</div><div>${s.t}</div></div>`).join('')}</div>
+    <div class="ins-card"><div class="ins-hd"><div class="ins-ico b">💡</div><div class="ins-ttl">액션 아이템</div></div>${actions.map(a=>`<div class="ins-item"><div style="flex-shrink:0">${insTag(a.tag)}</div><div>${a.t}</div></div>`).join('')}</div>`;
 }
 
-// 모듈2: 이상치(스파이크) 감지
-function mod2Spike(rows,cur){
-  const ins=[];
-  const daily={};
-  rows.filter(r=>cur.includes(String(r['날짜']||''))).forEach(r=>{const d=String(r['날짜']||'');if(!daily[d])daily[d]={s:0,r:0,c:0,imp:0};daily[d].s+=N(r['광고비']);daily[d].r+=N(r['총 전환매출액(14일)']);daily[d].c+=N(r['클릭수']);daily[d].imp+=N(r['노출수']);});
-  const dates=Object.keys(daily).sort();if(dates.length<7)return ins;
-  const cpcArr=dates.map(d=>daily[d].c>0?daily[d].s/daily[d].c:0);
-  const roasArr=dates.map(d=>daily[d].s>0?daily[d].r/daily[d].s*100:0);
-  const cpcM=cpcArr.reduce((a,b)=>a+b,0)/cpcArr.length,cpcSD=stdDev(cpcArr);
-  const roasM=roasArr.reduce((a,b)=>a+b,0)/roasArr.length,roasSD=stdDev(roasArr);
-  // 마지막 3일 체크
-  for(let i=Math.max(0,dates.length-3);i<dates.length;i++){
-    const d=dates[i],df=`${d.slice(4,6)}.${d.slice(6,8)}`;
-    if(cpcSD>0&&cpcArr[i]>cpcM+2*cpcSD)ins.push({g:'issue',t:insTag('모니터링',`${df} 클릭당비용 ₩${C(Math.round(cpcArr[i]))} — 평균(₩${C(Math.round(cpcM))})의 ${(cpcArr[i]/cpcM*100).toFixed(0)}%. 입찰 경쟁 심화 가능성`)});
-    if(roasSD>0&&roasArr[i]>roasM+2*roasSD)ins.push({g:'good',t:insTag('참고',`${df} 광고수익률 ${C(Math.round(roasArr[i]))}% 급증 — 프로모션, 외부 바이럴, 시즈널 수요 등 외부 요인 확인`)});
-    if(roasSD>0&&roasArr[i]<roasM-2*roasSD){
-      const cpcChg=cpcArr[i]/cpcM;
-      if(cpcChg>1.2)ins.push({g:'issue',t:insTag('즉시 조치',`${df} 광고수익률 ${C(Math.round(roasArr[i]))}% 급락 + 클릭당비용 상승 — 입찰 경쟁 심화로 비용 효율 하락. 입찰가 조정 검토`)});
-      else ins.push({g:'issue',t:insTag('즉시 조치',`${df} 광고수익률 ${C(Math.round(roasArr[i]))}% 급락 (클릭당비용 변동 없음) — 경쟁사 프로모션, 시장 변화 등 외부 요인 확인`)});
-    }
-  }
-  return ins;
-}
-
-// 모듈3: 요일별 + 공휴일 패턴
-function mod3DayHol(rows,cur){
-  const ins=[];
-  const byDay={0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
-  const daily={};
-  rows.filter(r=>cur.includes(String(r['날짜']||''))).forEach(r=>{const d=String(r['날짜']||'');if(!daily[d])daily[d]={s:0,r:0};daily[d].s+=N(r['광고비']);daily[d].r+=N(r['총 전환매출액(14일)']);});
-  const dates=Object.keys(daily).sort();
-  dates.forEach(d=>{const dow=s2d(d).getDay();const roas=daily[d].s>0?daily[d].r/daily[d].s*100:0;byDay[dow].push(roas);});
-  const allRoas=dates.map(d=>daily[d].s>0?daily[d].r/daily[d].s*100:0);
-  const avg=allRoas.length?allRoas.reduce((a,b)=>a+b,0)/allRoas.length:0;
-  if(avg===0)return ins;
-  const dayNames=['일','월','화','수','목','금','토'];
-  for(let i=0;i<7;i++){
-    if(byDay[i].length<3)continue;
-    const dayAvg=byDay[i].reduce((a,b)=>a+b,0)/byDay[i].length;
-    const diff=(dayAvg-avg)/avg*100;
-    if(diff>25)ins.push({g:'good',t:insTag('참고',`${dayNames[i]}요일 광고수익률 평균 ${C(Math.round(dayAvg))}% — 전체 평균 대비 +${Math.round(diff)}% 높음`)});
-    if(diff<-25)ins.push({g:'issue',t:insTag('참고',`${dayNames[i]}요일 광고수익률 평균 ${C(Math.round(dayAvg))}% — 전체 평균 대비 ${Math.round(diff)}% 낮음`)});
-  }
-  // 공휴일/연휴 분석
-  HOL_RANGES.forEach(hr=>{
-    const holDates=hr.dates.filter(d=>dates.includes(d));
-    if(!holDates.length)return;
-    const holS=holDates.reduce((a,d)=>a+(daily[d]?.s||0),0);
-    const holR=holDates.reduce((a,d)=>a+(daily[d]?.r||0),0);
-    const holRoas=holS>0?holR/holS*100:0;
-    // 연휴 전 같은 일수
-    const preStart=new Date(s2d(holDates[0]));preStart.setDate(preStart.getDate()-holDates.length);
-    const preDates=[];for(let i=0;i<holDates.length;i++){const pd=new Date(preStart);pd.setDate(pd.getDate()+i);preDates.push(d2s(pd));}
-    const preS=preDates.reduce((a,d)=>a+(daily[d]?.s||0),0);
-    const preR=preDates.reduce((a,d)=>a+(daily[d]?.r||0),0);
-    const preRoas=preS>0?preR/preS*100:0;
-    if(preRoas>0){
-      const chg=((holRoas-preRoas)/preRoas*100);
-      const spendChg=preS>0?((holS-preS)/preS*100):0;
-      ins.push({g:chg>=0?'good':'issue',t:insTag('참고',`${hr.name} 연휴(${holDates.length}일) — 광고수익률 ${C(Math.round(holRoas))}% (연휴 전 대비 ${chg>=0?'+':''}${Math.round(chg)}%), 광고비 ${spendChg>=0?'+':''}${Math.round(spendChg)}%`)});
-    }
-  });
-  return ins;
-}
-
-// 모듈6: 키워드 집중도 리스크
-function mod6KwConc(kwData){
-  const ins=[];if(!kwData||kwData.length<3)return ins;
-  const totalRev=kwData.reduce((s,d)=>s+Number(d.rev||0),0);if(!totalRev)return ins;
-  const top3Rev=kwData.slice(0,3).reduce((s,d)=>s+Number(d.rev||0),0);
-  const pct=top3Rev/totalRev*100;
-  if(pct>=60)ins.push({g:'issue',t:insTag('모니터링',`전환매출 상위 3개 키워드가 전체의 ${Math.round(pct)}% 차지 — 키워드 다변화로 리스크 분산 권장`)});
-  return ins;
-}
-
-// 모듈7: 전환율 변동 감지
-function mod7Cvr(rows,cur,prev){
-  const ins=[];if(!prev.length)return ins;
-  const daily={};rows.filter(r=>cur.includes(String(r['날짜']||''))).forEach(r=>{const d=String(r['날짜']||'');if(!daily[d])daily[d]={c:0,o:0,s:0};daily[d].c+=N(r['클릭수']);daily[d].o+=N(r['총 주문수(14일)']);daily[d].s+=N(r['광고비']);});
-  const prevD={};rows.filter(r=>prev.includes(String(r['날짜']||''))).forEach(r=>{const d=String(r['날짜']||'');if(!prevD[d])prevD[d]={c:0,o:0,s:0};prevD[d].c+=N(r['클릭수']);prevD[d].o+=N(r['총 주문수(14일)']);prevD[d].s+=N(r['광고비']);});
-  const curC=Object.values(daily).reduce((a,v)=>a+v.c,0),curO=Object.values(daily).reduce((a,v)=>a+v.o,0);
-  const prevC=Object.values(prevD).reduce((a,v)=>a+v.c,0),prevO=Object.values(prevD).reduce((a,v)=>a+v.o,0);
-  const curCvr=curC>0?curO/curC*100:0,prevCvr=prevC>0?prevO/prevC*100:0;
-  if(prevCvr>0){
-    const chg=(curCvr-prevCvr)/prevCvr*100;
-    if(chg<-30){
-      const curCpc=Object.values(daily).reduce((a,v)=>a+v.s,0)/Math.max(curC,1);
-      const prevCpc=Object.values(prevD).reduce((a,v)=>a+v.s,0)/Math.max(prevC,1);
-      const cpcChg=prevCpc>0?(curCpc-prevCpc)/prevCpc*100:0;
-      if(Math.abs(cpcChg)<15)ins.push({g:'issue',t:insTag('즉시 조치',`전환율 ${curCvr.toFixed(1)}% — 이전 대비 ${Math.round(chg)}% 하락 (클릭당비용 변동 없음). 리뷰, 상세페이지, 가격 경쟁력 점검 권장`)});
-      else ins.push({g:'issue',t:insTag('모니터링',`전환율 ${curCvr.toFixed(1)}% — 이전 대비 ${Math.round(chg)}% 하락. 클릭수도 감소 추세 — 키워드 관련성 확인`)});
-    }
-  }
-  return ins;
-}
-
-// 성과 대시보드 인사이트 (모듈1,2,3,6,7)
+// ── 성과 대시보드 인사이트 ──
 async function renderInsRpc(cur,prev,t){
   const rows=getRows();const c=aggR(rows,cur),p=aggR(rows,prev);
   const campData=await loadCampAgg(cur);
   const kwData=await loadKwTop(cur,'rev',10);
-  const goods=[],issues=[],recs=[];
-  // 기본 KPI
-  if(pD(c.roas,p.roas)!==null&&pD(c.roas,p.roas)>0)goods.push(`광고수익률 <span class="hl">${Cp(c.roas)}</span> 상승 추세`);
-  if(c.roas>=t)goods.push(`광고수익률 목표(${C(t)}%) 달성 중`);
-  // 모듈 실행
-  const m1=mod1Trend(rows,cur);
-  const m2=mod2Spike(rows,cur);
-  const m3=mod3DayHol(rows,cur);
-  const m6=mod6KwConc(kwData);
-  const m7=mod7Cvr(rows,cur,prev);
-  [m1,m2,m3,m6,m7].flat().forEach(i=>{if(i.g==='good')goods.push(i.t);else if(i.g==='issue')issues.push(i.t);else recs.push(i.t);});
-  // 기본 이슈
-  if(c.roas<t)issues.push(insTag('즉시 조치',`광고수익률 ${Cp(c.roas)} — 목표(${C(t)}%) 미달`));
-  if(!goods.length)goods.push('이번 기간 특이 긍정 지표 없음');
-  if(!issues.length)issues.push('특이 문제점 없음');
-  // 추천
+  const summary=[],actions=[];
+  
+  // ── 성과 요약 ──
+  // 광고수익률 현황
+  const roasDiff=p.roas>0?c.roas-p.roas:null;
+  if(c.roas>=t){
+    const exceed=c.roas-t;
+    summary.push({icon:'✅',t:`광고수익률 <b>${Cp(c.roas)}</b> — 목표(${C(t)}%) 대비 <b style="color:var(--green)">+${Math.round(exceed)}%p 초과</b> 달성 중`});
+  }else{
+    summary.push({icon:'⚠️',t:`광고수익률 <b>${Cp(c.roas)}</b> — 목표(${C(t)}%) 대비 <b style="color:var(--red)">${Math.round(c.roas-t)}%p 미달</b>`});
+  }
+
+  // 모듈1: 추세 연속성
+  const daily={};
+  rows.filter(r=>cur.includes(String(r['날짜']||''))).forEach(r=>{const d=String(r['날짜']||'');if(!daily[d])daily[d]={s:0,r:0,c:0,imp:0,o:0};daily[d].s+=N(r['광고비']);daily[d].r+=N(r['총 전환매출액(14일)']);daily[d].c+=N(r['클릭수']);daily[d].imp+=N(r['노출수']);daily[d].o+=N(r['총 주문수(14일)']);});
+  const dates=Object.keys(daily).sort();
+  if(dates.length>=4){
+    const roasArr=dates.map(d=>daily[d].s>0?daily[d].r/daily[d].s*100:0);
+    let streak=0,dir=0;
+    for(let i=1;i<roasArr.length;i++){const d=roasArr[i]-roasArr[i-1];if(d>0){if(dir>=0){streak++;dir=1;}else{streak=1;dir=1;}}else if(d<0){if(dir<=0){streak++;dir=-1;}else{streak=1;dir=-1;}}else{streak=0;dir=0;}}
+    if(streak>=3&&dir>0){const startVal=roasArr[roasArr.length-streak-1],endVal=roasArr[roasArr.length-1];summary.push({icon:'📈',t:`최근 <b>${streak}일 연속 상승</b> 추세 (${C(Math.round(startVal))}% → ${C(Math.round(endVal))}%, <b style="color:var(--green)">+${Math.round(endVal-startVal)}%p</b>)`});}
+    if(streak>=3&&dir<0){const startVal=roasArr[roasArr.length-streak-1],endVal=roasArr[roasArr.length-1];summary.push({icon:'📉',t:`최근 <b>${streak}일 연속 하락</b> 중 (${C(Math.round(startVal))}% → ${C(Math.round(endVal))}%, <b style="color:var(--red)">${Math.round(endVal-startVal)}%p</b>)`});}
+  }
+
+  // 모듈2: 이상치 감지
+  if(dates.length>=7){
+    const cpcArr=dates.map(d=>daily[d].c>0?daily[d].s/daily[d].c:0);
+    const roasArr=dates.map(d=>daily[d].s>0?daily[d].r/daily[d].s*100:0);
+    const cpcM=cpcArr.reduce((a,b)=>a+b,0)/cpcArr.length,cpcSD=stdDev(cpcArr);
+    const roasM=roasArr.reduce((a,b)=>a+b,0)/roasArr.length,roasSD=stdDev(roasArr);
+    for(let i=Math.max(0,dates.length-3);i<dates.length;i++){
+      const d=dates[i],df=`${d.slice(4,6)}.${d.slice(6,8)}`;
+      if(cpcSD>0&&cpcArr[i]>cpcM+2*cpcSD){const pctUp=((cpcArr[i]-cpcM)/cpcM*100);summary.push({icon:'⚡',t:`${df} 클릭당비용 ₩${C(Math.round(cpcArr[i]))} — 최근 평균(₩${C(Math.round(cpcM))}) 대비 <b style="color:var(--red)">+${Math.round(pctUp)}% 상승</b>. 입찰 경쟁 심화 가능성`});}
+      if(roasSD>0&&roasArr[i]<roasM-2*roasSD){
+        const prevRoas=i>0?roasArr[i-1]:roasM;
+        const drop=prevRoas-roasArr[i];
+        const cpcChg=cpcArr[i]/cpcM;
+        if(cpcChg>1.15)actions.push({tag:'즉시 조치',t:`${df} 광고수익률 ${C(Math.round(prevRoas))}% → ${C(Math.round(roasArr[i]))}%로 <b>${Math.round(drop)}%p 하락</b> + 클릭당비용 상승 — 입찰 경쟁 심화로 비용 효율 하락. 입찰가 조정 검토`});
+        else actions.push({tag:'즉시 조치',t:`${df} 광고수익률 ${C(Math.round(prevRoas))}% → ${C(Math.round(roasArr[i]))}%로 <b>${Math.round(drop)}%p 하락</b> (클릭당비용 변동 없음) — 경쟁사 프로모션, 시장 변화 등 외부 요인 확인`});
+      }
+      if(roasSD>0&&roasArr[i]>roasM+2*roasSD)summary.push({icon:'🎉',t:`${df} 광고수익률 ${C(Math.round(roasArr[i]))}% 급증 (평균 ${C(Math.round(roasM))}% 대비 <b>+${Math.round(roasArr[i]-roasM)}%p</b>) — 프로모션, 외부 바이럴, 시즈널 수요 등 확인`});
+    }
+  }
+
+  // 모듈3: 요일별 + 공휴일
+  if(dates.length>=14){
+    const byDay={0:[],1:[],2:[],3:[],4:[],5:[],6:[]};
+    dates.forEach(d=>{const dow=s2d(d).getDay();const roas=daily[d].s>0?daily[d].r/daily[d].s*100:0;byDay[dow].push(roas);});
+    const allRoas=dates.map(d=>daily[d].s>0?daily[d].r/daily[d].s*100:0);
+    const avg=allRoas.reduce((a,b)=>a+b,0)/allRoas.length;
+    const dayNames=['일','월','화','수','목','금','토'];
+    for(let i=0;i<7;i++){if(byDay[i].length<2)continue;const dayAvg=byDay[i].reduce((a,b)=>a+b,0)/byDay[i].length;const diff=(dayAvg-avg)/avg*100;
+      if(diff>25)summary.push({icon:'📅',t:`${dayNames[i]}요일 광고수익률 평균 ${C(Math.round(dayAvg))}% — 전체 대비 <b style="color:var(--green)">+${Math.round(diff)}%</b> 높음`});
+      if(diff<-25)summary.push({icon:'📅',t:`${dayNames[i]}요일 광고수익률 평균 ${C(Math.round(dayAvg))}% — 전체 대비 <b style="color:var(--red)">${Math.round(diff)}%</b> 낮음`});
+    }
+  }
+  // 공휴일/연휴
+  HOL_RANGES.forEach(hr=>{
+    const holDates=hr.dates.filter(d=>dates.includes(d));if(!holDates.length)return;
+    const holS=holDates.reduce((a,d)=>a+(daily[d]?.s||0),0),holR=holDates.reduce((a,d)=>a+(daily[d]?.r||0),0);
+    const holRoas=holS>0?holR/holS*100:0;
+    const preStart=new Date(s2d(holDates[0]));preStart.setDate(preStart.getDate()-holDates.length);
+    const preDates=[];for(let i=0;i<holDates.length;i++){const pd=new Date(preStart);pd.setDate(pd.getDate()+i);preDates.push(d2s(pd));}
+    const preS=preDates.reduce((a,d)=>a+(daily[d]?.s||0),0),preR=preDates.reduce((a,d)=>a+(daily[d]?.r||0),0);
+    const preRoas=preS>0?preR/preS*100:0;
+    if(preRoas>0){const chg=holRoas-preRoas;const spendChg=preS>0?((holS-preS)/preS*100):0;
+      summary.push({icon:'🎌',t:`${hr.name} 연휴(${holDates.length}일) — 광고수익률 ${C(Math.round(holRoas))}% (연휴 전 대비 <b>${chg>=0?'+':''}${Math.round(chg)}%p</b>), 광고비 ${spendChg>=0?'+':''}${Math.round(spendChg)}%`});}
+  });
+
+  // 모듈6: 키워드 집중도
+  if(kwData&&kwData.length>=3){
+    const totalRev=kwData.reduce((s,d)=>s+Number(d.rev||0),0);
+    const top3Rev=kwData.slice(0,3).reduce((s,d)=>s+Number(d.rev||0),0);
+    const pct=totalRev>0?top3Rev/totalRev*100:0;
+    if(pct>=60)actions.push({tag:'모니터링',t:`전환매출 상위 3개 키워드가 전체의 <b>${Math.round(pct)}%</b> 차지 — 특정 키워드 의존도 높음. 키워드 다변화로 리스크 분산 권장`});
+  }
+
+  // 모듈7: 전환율 변동
+  if(prev.length){
+    const curC=Object.values(daily).reduce((a,v)=>a+v.c,0),curO=Object.values(daily).reduce((a,v)=>a+v.o,0);
+    const prevD={};rows.filter(r=>prev.includes(String(r['날짜']||''))).forEach(r=>{const d=String(r['날짜']||'');if(!prevD[d])prevD[d]={c:0,o:0,s:0};prevD[d].c+=N(r['클릭수']);prevD[d].o+=N(r['총 주문수(14일)']);prevD[d].s+=N(r['광고비']);});
+    const prevC=Object.values(prevD).reduce((a,v)=>a+v.c,0),prevO=Object.values(prevD).reduce((a,v)=>a+v.o,0);
+    const curCvr=curC>0?curO/curC*100:0,prevCvr=prevC>0?prevO/prevC*100:0;
+    if(prevCvr>0){const chg=(curCvr-prevCvr)/prevCvr*100;
+      if(chg<-30){const curCpc=Object.values(daily).reduce((a,v)=>a+v.s,0)/Math.max(curC,1);const prevCpc=Object.values(prevD).reduce((a,v)=>a+v.s,0)/Math.max(prevC,1);const cpcChg=prevCpc>0?(curCpc-prevCpc)/prevCpc*100:0;
+        if(Math.abs(cpcChg)<15)actions.push({tag:'즉시 조치',t:`전환율 ${prevCvr.toFixed(1)}% → ${curCvr.toFixed(1)}%로 <b>${Math.round(curCvr-prevCvr)}%p 하락</b> (클릭당비용 변동 없음) — 리뷰, 상세페이지, 가격 경쟁력 점검 권장`});
+        else actions.push({tag:'모니터링',t:`전환율 ${prevCvr.toFixed(1)}% → ${curCvr.toFixed(1)}%로 <b>${Math.round(curCvr-prevCvr)}%p 하락</b>, 클릭수도 감소 추세 — 키워드 관련성 확인`});
+      }
+    }
+  }
+
+  // 캠페인 기반 액션
   if(campData){
-    const cl=campData.filter(v=>Number(v.spend)>10000).map(v=>{const ct=typeof getCampTarget==='function'?getCampTarget(v.campaign):t;return{name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0,target:ct};});
+    const cl=campData.filter(v=>Number(v.spend)>10000).map(v=>{const ct=typeof getCampTarget==='function'?getCampTarget(v.campaign):t;return{name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0,spend:Number(v.spend),target:ct};});
     const topC=cl.sort((a,b)=>b.roas-a.roas)[0];
     const botC=cl.sort((a,b)=>a.roas-b.roas)[0];
-    if(topC&&topC.roas>=topC.target*2)recs.push(insTag('모니터링',`'${topC.name.slice(0,15)}' 광고수익률 ${C(Math.round(topC.roas))}% (목표의 2배↑) — 예산 비중 확대 검토`));
-    if(botC&&botC.roas<botC.target*.3)recs.push(insTag('즉시 조치',`'${botC.name.slice(0,15)}' 광고수익률 ${C(Math.round(botC.roas))}% — 입찰가/예산 조정 필요`));
+    if(topC&&topC.roas>=topC.target*2)actions.push({tag:'모니터링',t:`'${topC.name.slice(0,15)}' 광고수익률 ${C(Math.round(topC.roas))}% (목표 ${C(Math.round(topC.target))}%의 <b>${(topC.roas/topC.target).toFixed(1)}배</b>) — 예산 비중 확대 검토`});
+    if(botC&&botC.roas<botC.target*.3)actions.push({tag:'즉시 조치',t:`'${botC.name.slice(0,15)}' 광고수익률 ${C(Math.round(botC.roas))}% (목표 ${C(Math.round(botC.target))}%의 <b>${Math.round(botC.roas/botC.target*100)}%</b>) — 입찰가/예산 조정 또는 일시 중단 검토`});
   }
-  if(!recs.length)recs.push(insTag('참고','현재 전략 유지 — 다음 기간 추이 모니터링 권장'));
-  document.getElementById('insRow').innerHTML=`
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico g">✅</div><div class="ins-ttl">잘 되고 있는 점</div></div>${goods.map(t=>`<div class="ins-item"><div class="dot g"></div><div>${t}</div></div>`).join('')}</div>
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico r">🔴</div><div class="ins-ttl">문제점 · 주의</div></div>${issues.map(t=>`<div class="ins-item"><div class="dot r"></div><div>${t}</div></div>`).join('')}</div>
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico b">💡</div><div class="ins-ttl">개선 제안</div></div>${recs.map(t=>`<div class="ins-item"><div class="dot b"></div><div>${t}</div></div>`).join('')}</div>`;
+
+  renderInsBox('insRow',summary,actions);
 }
 
 function renderChips(){document.getElementById('fchips').innerHTML=aF.map(f=>`<div class="chip">📄 ${f.month} (${f.rows.length.toLocaleString()}행)<span class="chip-x" onclick="removeFile('${f.month}')">✕</span></div>`).join('');}
@@ -2167,38 +2133,27 @@ function renderCpcRec(rows,cur){
 
 
 function renderCpcIns(aAgg,mAgg,aPrev,mPrev,rows,cur){
+  const summary=[],actions=[];
   const aDiff=pD(aAgg.cpc,aPrev.cpc),mDiff=pD(mAgg.cpc,mPrev.cpc);
   const aRoasD=pD(aAgg.roas,aPrev.roas),mRoasD=pD(mAgg.roas,mPrev.roas);
-  const goods=[],issues=[],recs=[];
-  // ─ 잘 되고 있는 점 ─
-  if(aAgg.roas>0&&mAgg.roas>0&&aAgg.roas>mAgg.roas)goods.push(`매출최적화 ROAS <span class="hl">${Cp(aAgg.roas)}</span>가 수동(${Cp(mAgg.roas)})보다 높음`);
-  else if(aAgg.roas>0&&mAgg.roas>0&&mAgg.roas>aAgg.roas)goods.push(`수동 ROAS <span class="hl">${Cp(mAgg.roas)}</span>가 매출최적화(${Cp(aAgg.roas)})보다 높음 — 수동 키워드 효율 우수`);
-  if(aDiff!==null&&aDiff<0)goods.push(`매출최적화 CPC <span class="hl">${C(Math.abs(aDiff).toFixed(1))}%</span> 감소 — 비용 효율 개선`);
-  if(aRoasD!==null&&aRoasD>0)goods.push(`매출최적화 ROAS 상승(+${aRoasD.toFixed(1)}%) — 현재 입찰 전략 효과적`);
-  if(mRoasD!==null&&mRoasD>0)goods.push(`수동 ROAS 상승(+${mRoasD.toFixed(1)}%) — 수동 키워드 성과 개선 중`);
-  if(!goods.length)goods.push('이번 기간 특이 긍정 지표 없음');
-  // ─ 문제점 ─
-  if(aDiff!==null&&aDiff>10)issues.push(`매출최적화 CPC <span class="hl">+${C(aDiff.toFixed(1))}%</span> 상승 — 경쟁 심화, 주요 키워드 입찰 점검`);
-  if(mDiff!==null&&mDiff>10)issues.push(`수동 CPC <span class="hl">+${C(mDiff.toFixed(1))}%</span> 상승 — 수동 입찰가 재검토 필요`);
-  if(aRoasD!==null&&aRoasD<-15)issues.push(`매출최적화 ROAS ${aRoasD.toFixed(1)}% 하락 — 광고 효율 저하, 입찰 구조 재검토`);
-  if(mRoasD!==null&&mRoasD<-15)issues.push(`수동 ROAS ${mRoasD.toFixed(1)}% 하락 — 수동 키워드 성과 저하`);
-  if(!issues.length)issues.push('특이 문제점 없음');
-  // ─ 개선 제안: 수동 목적 2가지 관점 제시 ─
+  
+  // 성과 요약
   if(aAgg.roas>0&&mAgg.roas>0){
-    if(aAgg.roas>mAgg.roas&&aRoasD!==null&&aRoasD>0)
-      recs.push(`매출최적화 성과 우위 — 핵심 키워드 수동 입찰로 노출 강화 검토 (점유율 확보 목적)`);
-    else if(mAgg.roas>aAgg.roas)
-      recs.push(`수동 효율 우수 — 수동 키워드 범위 확대 및 예산 비중 증가 검토`);
+    if(aAgg.roas>mAgg.roas)summary.push({icon:'📊',t:`매출최적화 광고수익률 <b>${Cp(aAgg.roas)}</b> — 수동(${Cp(mAgg.roas)}) 대비 <b>+${Math.round(aAgg.roas-mAgg.roas)}%p</b> 높음`});
+    else summary.push({icon:'📊',t:`수동 광고수익률 <b>${Cp(mAgg.roas)}</b> — 매출최적화(${Cp(aAgg.roas)}) 대비 <b>+${Math.round(mAgg.roas-aAgg.roas)}%p</b> 높음. 수동 키워드 효율 우수`});
   }
-  if(aDiff!==null&&aDiff>10)
-    recs.push(`매출최적화 CPC 상승 시 전략: ① 핵심 키워드 수동으로 전환 → 직접 입찰가 통제, ② 저성과 키워드 예산 축소 → 고성과 집중`);
-  if(aAgg.cpc>0&&mAgg.cpc>0)
-    recs.push(`수동 캠페인 입찰 전략: <b>비용절감형</b>(자동보다 낮은 CPC로 효율 개선) 또는 <b>점유율확보형</b>(핵심키워드 높은 CPC로 노출 강화) — 키워드별 목적 명확히`);
-  if(!recs.length)recs.push('현재 전략 유지 — 다음 기간 추이 모니터링 권장');
-  document.getElementById('cpcInsRow').innerHTML=`
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico g">✅</div><div class="ins-ttl">잘 되고 있는 점</div></div>${goods.map(t=>`<div class="ins-item"><div class="dot g"></div><div>${t}</div></div>`).join('')}</div>
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico r">🔴</div><div class="ins-ttl">문제점 · 주의</div></div>${issues.map(t=>`<div class="ins-item"><div class="dot r"></div><div>${t}</div></div>`).join('')}</div>
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico b">💡</div><div class="ins-ttl">개선 제안</div></div>${recs.map(t=>`<div class="ins-item"><div class="dot b"></div><div>${t}</div></div>`).join('')}</div>`;
+  if(aDiff!==null&&aDiff<-5)summary.push({icon:'✅',t:`매출최적화 클릭당비용 <b>${Math.abs(aDiff).toFixed(1)}% 감소</b> (₩${C(Math.round(aPrev.cpc))} → ₩${C(Math.round(aAgg.cpc))}) — 비용 효율 개선`});
+  if(aRoasD!==null&&aRoasD>10)summary.push({icon:'📈',t:`매출최적화 광고수익률 <b>+${aRoasD.toFixed(1)}%</b> 상승 — 현재 입찰 전략 효과적`});
+  if(mRoasD!==null&&mRoasD>10)summary.push({icon:'📈',t:`수동 광고수익률 <b>+${mRoasD.toFixed(1)}%</b> 상승 — 수동 키워드 성과 개선 중`});
+  
+  // 액션 아이템
+  if(aDiff!==null&&aDiff>10)actions.push({tag:'모니터링',t:`매출최적화 클릭당비용 <b>+${aDiff.toFixed(1)}% 상승</b> (₩${C(Math.round(aPrev.cpc))} → ₩${C(Math.round(aAgg.cpc))}) — 입찰 경쟁 심화 가능성. 주요 키워드 입찰 현황 점검`});
+  if(mDiff!==null&&mDiff>10)actions.push({tag:'모니터링',t:`수동 클릭당비용 <b>+${mDiff.toFixed(1)}% 상승</b> (₩${C(Math.round(mPrev.cpc))} → ₩${C(Math.round(mAgg.cpc))}) — 수동 입찰가 재검토 필요`});
+  if(aRoasD!==null&&aRoasD<-15)actions.push({tag:'즉시 조치',t:`매출최적화 광고수익률 <b>${aRoasD.toFixed(1)}% 하락</b> (${Cp(aPrev.roas)} → ${Cp(aAgg.roas)}) — 저성과 키워드 예산 축소, 고성과 키워드 집중 검토`});
+  if(mRoasD!==null&&mRoasD<-15)actions.push({tag:'즉시 조치',t:`수동 광고수익률 <b>${mRoasD.toFixed(1)}% 하락</b> (${Cp(mPrev.roas)} → ${Cp(mAgg.roas)}) — 수동 키워드 입찰가 조정 필요`});
+  if(aAgg.cpc>0&&mAgg.cpc>0)actions.push({tag:'참고',t:`수동 캠페인 입찰 전략: <b>비용절감형</b>(자동보다 낮은 CPC로 효율 개선) 또는 <b>점유율확보형</b>(핵심키워드 높은 CPC로 노출 강화) — 키워드별 목적 명확히 설정`});
+  
+  renderInsBox('cpcInsRow',summary,actions);
 }
 // ════ HISTORY ════
 function addH(page){
@@ -2281,50 +2236,46 @@ function setSlideGr(g,el){slideGr=g;document.querySelectorAll('#campDetailArea .
 function renderDetailChart(){if(!slideCampData||!slideCampData.length)return;const byK={};slideCampData.forEach(r=>{const d=r.date_str;if(!d||d.length<8)return;const dk=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;const key=slideGr==='주별'?wkS(d):slideGr==='월별'?d.slice(0,4)+'-'+d.slice(4,6):dk;if(!byK[key])byK[key]={spend:0,rev:0,clicks:0,imp:0};byK[key].spend+=Number(r.spend);byK[key].rev+=Number(r.rev);byK[key].clicks+=Number(r.clicks);byK[key].imp+=Number(r.imp);});const keys=Object.keys(byK).sort();const labels=keys.map(k=>slideGr==='주별'?k.slice(5)+' 주':slideGr==='월별'?k.slice(2).replace('-','.')+'월':k.slice(5));const spends=keys.map(k=>byK[k].spend);const roass=keys.map(k=>byK[k].spend>0?byK[k].rev/byK[k].spend*100:0);const cpcs=keys.map(k=>byK[k].clicks>0?byK[k].spend/byK[k].clicks:0);if(CH.campDetail)CH.campDetail.destroy();CH.campDetail=new Chart(document.getElementById('campDetailChart').getContext('2d'),{data:{labels,datasets:[{type:'bar',label:'광고비',data:spends,backgroundColor:'rgba(61,142,248,.25)',borderColor:'rgba(61,142,248,.6)',borderWidth:1,borderRadius:2,yAxisID:'yM'},{type:'line',label:'광고수익률(%)',data:roass,borderColor:'#ffbe3d',backgroundColor:'transparent',borderWidth:2,pointRadius:2,tension:.35,yAxisID:'yR'},{type:'line',label:'클릭당비용(₩)',data:cpcs,borderColor:'#ff8c42',backgroundColor:'transparent',borderWidth:1.5,pointRadius:1.5,borderDash:[4,3],tension:.35,yAxisID:'yC'}]},options:{responsive:true,interaction:{mode:'index',intersect:false},plugins:{legend:{labels:{color:TC,font:{size:10},boxWidth:8,padding:8}}},scales:{yM:{position:'left',ticks:{color:TC,font:{size:9},callback:v=>fW(v)},grid:{color:GC}},yR:{position:'right',ticks:{color:TC,font:{size:9},callback:v=>C(v)+'%'},grid:{display:false}},yC:{position:'right',display:false},x:{ticks:{color:TC,font:{size:9},maxTicksLimit:15},grid:{color:GC}}}}});}
 function renderDetailProd(prods,campName){if(!prods.length){document.querySelector('#campDetailProdTbl tbody').innerHTML='<tr><td colspan="9" style="text-align:center;color:var(--text3);padding:12px">상품 데이터 없음</td></tr>';return;}const t=getCampTarget(campName||slideCampName);const totalSpend=prods.reduce((s,d)=>s+Number(d.spend),0);const totalRev=prods.reduce((s,d)=>s+Number(d.rev),0);document.querySelector('#campDetailProdTbl thead').innerHTML='<tr><th style="min-width:180px">상품명</th><th>노출수</th><th>클릭수</th><th>광고비</th><th>전환매출</th><th>광고수익률</th><th>주문수</th><th>광고비 비중</th><th>매출액 비중</th></tr>';document.querySelector('#campDetailProdTbl tbody').innerHTML=prods.map(d=>{const spend=Number(d.spend),rev=Number(d.rev),imp=Number(d.imp),clicks=Number(d.clicks),orders=Number(d.orders);const roas=spend>0?rev/spend*100:0;const spendPct=totalSpend>0?spend/totalSpend*100:0;const revPct=totalRev>0?rev/totalRev*100:0;const ratio=roas/Math.max(t,1);const bg=ratio>=1?`rgba(0,224,154,${Math.min(ratio*.15,.25)})`:ratio>=.5?`rgba(255,190,61,${Math.min((1-ratio)*.3,.2)})`:`rgba(255,68,102,${Math.min((1-ratio)*.2,.2)})`;return`<tr style="background:${bg}"><td style="white-space:normal;word-break:break-all">${d.product||'(미분류)'}</td><td>${fN(imp)}</td><td>${fN(clicks)}</td><td>${fW(spend)}</td><td style="color:var(--green)">${fW(rev)}</td><td><span class="bdg ${rC(roas,t)}">${C(Math.round(roas))}%</span></td><td>${fN(orders)}건</td><td>${spendPct.toFixed(1)}%</td><td>${revPct.toFixed(1)}%</td></tr>`;}).join('');}
 
-// 캠페인 분석 인사이트 (모듈 4,9,10 + 기본)
+// 캠페인 분석 인사이트 (모듈 4,9,10 — 2박스)
 function renderCampIns(data,t){
-  const el=document.getElementById('campInsRow');if(!el)return;
-  const goods=[],issues=[],recs=[];
+  const summary=[],actions=[];
   const sorted=[...data].sort((a,b)=>b.roas-a.roas);
   const highRoas=data.filter(d=>d.roas>=d.target);
   const lowRoas=data.filter(d=>d.roas<d.target*.5&&d.spend>50000);
   
-  // 기본
-  if(highRoas.length)goods.push(`<b>${highRoas.length}</b>개 캠페인이 개별 목표 달성`);
-  if(sorted[0])goods.push(`최고 효율: <span class="hl">${sorted[0].name.slice(0,15)}</span> 광고수익률 ${C(Math.round(sorted[0].roas))}%`);
+  // 성과 요약
+  if(highRoas.length)summary.push({icon:'✅',t:`<b>${highRoas.length}</b>/${data.length}개 캠페인 개별 목표 달성`});
+  if(sorted[0])summary.push({icon:'🏆',t:`최고 효율: <b>${sorted[0].name.slice(0,18)}</b> — 광고수익률 ${C(Math.round(sorted[0].roas))}% (목표 ${C(Math.round(sorted[0].target))}% 대비 <b>+${Math.round(sorted[0].roas-sorted[0].target)}%p</b>)`});
   
-  // 모듈4: 캠페인 효율 격차
-  if(data.length>=4){
-    const top3=data.slice(0,3).reduce((s,d)=>s+d.roas,0)/3;
-    const bot3=data.slice(-3).reduce((s,d)=>s+d.roas,0)/3;
-    if(top3>0&&bot3>0&&top3/bot3>=3){
-      const botSpend=data.slice(-3).reduce((s,d)=>s+d.spend,0);
-      recs.push(insTag('즉시 조치',`상위 3개 캠페인 평균 광고수익률 ${C(Math.round(top3))}% vs 하위 3개 ${C(Math.round(bot3))}% — 하위 캠페인 광고비(${fW(botSpend)})를 상위로 재배분 검토`));
-    }
-  }
-  
-  // 모듈9: 신규/이탈 캠페인
+  // 모듈9: 상승/하락 추세
   const improving=data.filter(d=>d.roasChg!==null&&d.roasChg>20);
   const declining=data.filter(d=>d.roasChg!==null&&d.roasChg<-30&&d.spend>50000);
-  if(improving.length)goods.push(insTag('모니터링',`'${improving[0].name.slice(0,12)}' 등 ${improving.length}개 캠페인 광고수익률 상승 추세`));
-  if(declining.length)issues.push(insTag('모니터링',`'${declining[0].name.slice(0,12)}' 등 ${declining.length}개 캠페인 광고수익률 하락 추세`));
+  if(improving.length)summary.push({icon:'📈',t:`${improving.length}개 캠페인 광고수익률 상승 추세: ${improving.slice(0,2).map(d=>`'${d.name.slice(0,12)}' +${Math.round(d.roasChg)}%`).join(', ')}`});
+  if(declining.length)summary.push({icon:'📉',t:`${declining.length}개 캠페인 광고수익률 하락 추세: ${declining.slice(0,2).map(d=>`'${d.name.slice(0,12)}' ${Math.round(d.roasChg)}%`).join(', ')}`});
   
   // 모듈10: 효율 점수
   const efficient=data.filter(d=>d.spendPct>0&&d.revPct/d.spendPct>=1.5).sort((a,b)=>(b.revPct/b.spendPct)-(a.revPct/a.spendPct));
   const inefficient=data.filter(d=>d.spendPct>3&&d.revPct/d.spendPct<0.5);
-  if(efficient[0])goods.push(insTag('참고',`'${efficient[0].name.slice(0,15)}' 효율 우수 — 광고비 ${efficient[0].spendPct.toFixed(1)}%로 매출 ${efficient[0].revPct.toFixed(1)}% 기여`));
-  if(inefficient[0])issues.push(insTag('즉시 조치',`'${inefficient[0].name.slice(0,15)}' 효율 저조 — 광고비 ${inefficient[0].spendPct.toFixed(1)}% 투입 대비 매출 ${inefficient[0].revPct.toFixed(1)}%만 기여`));
+  if(efficient[0])summary.push({icon:'💰',t:`'${efficient[0].name.slice(0,15)}' 효율 우수 — 광고비 ${efficient[0].spendPct.toFixed(1)}%로 매출 <b>${efficient[0].revPct.toFixed(1)}%</b> 기여`});
   
-  if(lowRoas.length)issues.push(insTag('즉시 조치',`${lowRoas.length}개 캠페인 목표 50% 미만`));
-  lowRoas.slice(0,2).forEach(d=>issues.push(`　'${d.name.slice(0,15)}' 광고수익률 ${C(Math.round(d.roas))}% (목표 ${C(Math.round(d.target))}%)`));
+  // 액션 아이템
+  // 모듈4: 효율 격차
+  if(data.length>=4){
+    const top3=sorted.slice(0,3).reduce((s,d)=>s+d.roas,0)/3;
+    const botSorted=[...data].sort((a,b)=>a.roas-b.roas);
+    const bot3=botSorted.slice(0,3).reduce((s,d)=>s+d.roas,0)/3;
+    if(top3>0&&bot3>0&&top3/bot3>=3){
+      const botSpend=botSorted.slice(0,3).reduce((s,d)=>s+d.spend,0);
+      actions.push({tag:'즉시 조치',t:`상위 3개 평균 ${C(Math.round(top3))}% vs 하위 3개 ${C(Math.round(bot3))}% (<b>${(top3/bot3).toFixed(1)}배</b> 격차) — 하위 캠페인 광고비(${fW(botSpend)})를 상위로 재배분 검토`});
+    }
+  }
+  if(inefficient[0])actions.push({tag:'즉시 조치',t:`'${inefficient[0].name.slice(0,15)}' 효율 저조 — 광고비 ${inefficient[0].spendPct.toFixed(1)}% 투입 대비 매출 <b>${inefficient[0].revPct.toFixed(1)}%</b>만 기여. 예산 축소 또는 키워드 재검토`});
+  if(lowRoas.length){
+    actions.push({tag:'즉시 조치',t:`${lowRoas.length}개 캠페인 목표 50% 미만: ${lowRoas.slice(0,2).map(d=>`'${d.name.slice(0,12)}' ${C(Math.round(d.roas))}%(목표 ${C(Math.round(d.target))}%)`).join(', ')}`});
+  }
+  if(declining.length)actions.push({tag:'모니터링',t:`하락 추세 캠페인 ${declining.length}개 — 추가 하락 시 입찰가/예산 조정 필요`});
   
-  if(!goods.length)goods.push('특이 긍정 지표 없음');
-  if(!issues.length)issues.push('특이 문제점 없음');
-  if(!recs.length)recs.push(insTag('참고',`전체 ${data.length}개 캠페인 중 ${highRoas.length}개 목표 달성`));
-  
-  el.innerHTML=`<div class="ins-card"><div class="ins-hd"><div class="ins-ico g">✅</div><div class="ins-ttl">잘 되고 있는 점</div></div>${goods.map(t=>`<div class="ins-item"><div class="dot g"></div><div>${t}</div></div>`).join('')}</div>
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico r">🔴</div><div class="ins-ttl">문제점 · 주의</div></div>${issues.map(t=>`<div class="ins-item"><div class="dot r"></div><div>${t}</div></div>`).join('')}</div>
-    <div class="ins-card"><div class="ins-hd"><div class="ins-ico b">💡</div><div class="ins-ttl">개선 제안</div></div>${recs.map(t=>`<div class="ins-item"><div class="dot b"></div><div>${t}</div></div>`).join('')}</div>`;
+  renderInsBox('campInsRow',summary,actions);
 }
 
 // ════ INIT ════
