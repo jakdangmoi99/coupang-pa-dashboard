@@ -1104,7 +1104,7 @@ async function renderProdRpc(cur,prev,t){
   // 이탈 제품
   const outId='prodTOut';
   let outEl=document.getElementById(outId);
-  if(!outEl){const wrap=document.querySelector('#prodT').closest('.card');const div=document.createElement('div');div.id=outId;div.style.marginTop='10px';wrap.appendChild(div);outEl=div;}
+  if(!outEl){const wrap=document.querySelector('#prodT').closest('.card-full');if(!wrap)return;const div=document.createElement('div');div.id=outId;div.style.marginTop='10px';wrap.appendChild(div);outEl=div;}
   if(outProds.length&&prev.length){
     outEl.innerHTML=`<div style="font-size:11px;font-weight:700;color:var(--text3);margin-bottom:5px;padding-top:8px;border-top:1px solid var(--border)">📤 OUT — 직전 기간 TOP10에서 이탈한 제품</div>`+
     outProds.map(d=>`<div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:11.5px;color:var(--text3)"><span class="rd" style="font-size:10px">OUT</span><span style="max-width:200px;white-space:normal;word-break:break-all">${d.product}</span><span style="margin-left:auto;font-family:'DM Mono',monospace;font-size:11px">${fW(Number(d.rev))}</span><span style="font-size:10px;color:var(--text3)">(직전 ${pm[d.product]}위)</span></div>`).join('');
@@ -2239,95 +2239,6 @@ function renderDetailProd(prods){
   }).join('');
 }
 
-async function renderCampPage(){
-  if(!aF.length)return;
-  const rows=getRows();
-  const{cur,prev,lbl}=getPer(rows,campP,'main');
-  document.getElementById('campPlbl').textContent=lbl;
-  // 월 탭
-  document.getElementById('campMtabs').innerHTML=['전체',...aF.map(f=>f.month)].map(m=>`<button class="mtab ${m===cM?'on':''}" onclick="cM='${m}';renderCampPage()">${m}</button>`).join('');
-  
-  if(!cur.length)return;
-  // KPI
-  const c=aggR(rows,cur),p=aggR(rows,prev);
-  const prevHas=prev.length>0;
-  const cmpL=lbl.includes('vs')?lbl.split('vs')[1].trim():'이전 기간';
-  document.getElementById('campKpiRow').innerHTML=[
-    {l:'노출수',v:fNd(c.imp)+'회',d:pD(c.imp,p.imp),c:'c1'},{l:'CTR',v:c.ctr.toFixed(2)+'%',d:pD(c.ctr,p.ctr),c:'c2'},
-    {l:'CVR',v:(c.clicks>0?(c.orders/c.clicks*100).toFixed(1):'0.0')+'%',d:pD(c.clicks>0?c.orders/c.clicks*100:0,p.clicks>0?p.orders/p.clicks*100:0),c:'c3'},
-    {l:'총 광고비',v:fWd(c.spend),d:pD(c.spend,p.spend),c:'c4'},{l:'전환매출',v:fW(c.rev),d:pD(c.rev,p.rev),c:'c5'},
-    {l:'ROAS',v:Cp(c.roas),d:pD(c.roas,p.roas),c:'c6'},
-  ].map((it,i)=>`<div class="kpi ${it.c}" style="animation-delay:${i*.05}s"><div class="kpi-lbl">${it.l}</div><div class="kpi-val">${it.v}</div><div class="kpi-cmp">${dT(it.d)}<span style="font-size:10px;color:var(--text3);margin-left:3px">${cmpL}</span></div></div>`).join('');
-
-  // 비활성 토글
-  const hideInactive=document.getElementById('campHideInactive')?.checked;
-  const tk=document.getElementById('campInactiveTrack'),tb=document.getElementById('campInactiveThumb');
-  if(tk)tk.style.background=hideInactive?'var(--accent)':'var(--border2)';
-  if(tb)tb.style.left=hideInactive?'18px':'2px';
-
-  // 캠페인 데이터 로드 (RPC)
-  const campData=await loadCampAgg(cur);
-  const prevCampData=prev.length?await loadCampAgg(prev):[];
-  if(!campData||!campData.length)return;
-  
-  // 비활성 필터 (최근 30일 내 광고비>0)
-  let filtered=campData;
-  if(hideInactive){
-    const allDates=getDates(rows);const last=allDates[allDates.length-1]||'';
-    const r30=allDates.filter(d=>{if(!last)return false;const a=s2d(last),b=s2d(d);return(a-b)<=30*86400000;});
-    const r30data=await loadCampAgg(r30);
-    const activeCamps=new Set((r30data||[]).filter(c=>Number(c.spend)>0).map(c=>c.campaign));
-    filtered=campData.filter(c=>activeCamps.has(c.campaign));
-  }
-
-  const t=parseFloat(document.getElementById('roasT')?.value)||1000;
-  // prev 맵
-  const prevMap={};(prevCampData||[]).forEach(c=>{prevMap[c.campaign]={spend:Number(c.spend),rev:Number(c.rev),clicks:Number(c.clicks),imp:Number(c.imp),orders:Number(c.orders)};});
-  
-  // 테이블 데이터
-  const tblData=filtered.map(c=>{
-    const spend=Number(c.spend),rev=Number(c.rev),clicks=Number(c.clicks),imp=Number(c.imp),orders=Number(c.orders);
-    const roas=spend>0?rev/spend*100:0,cpc=clicks>0?spend/clicks:0,ctr=imp>0?clicks/imp*100:0,cvr=clicks>0?orders/clicks*100:0;
-    const p=prevMap[c.campaign]||{};
-    const pRoas=p.spend>0?p.rev/p.spend*100:0;
-    const roasChg=pRoas>0?pD(roas,pRoas):null;
-    return{name:c.campaign,imp,clicks,ctr,cpc,cvr,spend,rev,roas,orders,roasChg,spendPct:0};
-  }).sort((a,b)=>b.spend-a.spend);
-  const totalSpend=tblData.reduce((s,d)=>s+d.spend,0);
-  tblData.forEach(d=>d.spendPct=totalSpend>0?d.spend/totalSpend*100:0);
-  const totalRev=tblData.reduce((s,d)=>s+d.rev,0);
-  tblData.forEach(d=>d.revPct=totalRev>0?d.rev/totalRev*100:0);
-
-  // 버블 차트
-  renderCampBubble(tblData,t);
-  
-  // 테이블
-  const chk=campView==='compare';
-  document.querySelector('#campTbl thead').innerHTML=`<tr>${chk?'<th style="width:30px"></th>':''}
-    <th>캠페인명</th><th>노출수</th><th>클릭수</th><th>클릭률</th><th>CPC</th><th>전환율</th><th>집행광고비</th><th>광고전환매출</th><th>광고수익률</th><th>광고비 비중%</th><th>매출액 비중%</th></tr>`;
-  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{
-    const checked=campCompSel.includes(d.name)?'checked':'';
-    const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';
-    return`<tr style="cursor:pointer" onclick="openCampSlide('${d.name.replace(/'/g,"\\'")}')">
-      ${chk?`<td onclick="event.stopPropagation();toggleCampComp('${d.name.replace(/'/g,"\\'")}')"><input type="checkbox" ${checked} style="cursor:pointer"/></td>`:''}
-      <td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td>
-      <td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td>
-      <td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td>
-      <td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td>
-      <td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td>
-      <td><span class="bdg ${rC(d.roas,t)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td>
-      <td>${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td>
-    </tr>`;
-  }).join('');
-
-  // 비교 모드
-  if(campView==='compare'&&campCompSel.length>=2){
-    renderCampCompare(campCompSel,cur,t);
-  }
-
-  // 인사이트
-  renderCampIns(tblData,t);
-}
 
 // ════ INIT ════
 document.getElementById('hiDate').value=new Date().toISOString().slice(0,10);
