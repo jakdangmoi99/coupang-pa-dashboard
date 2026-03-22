@@ -1181,7 +1181,8 @@ async function renderSpendRpc(cur,t){
 // ══════ INSIGHT ENGINE v3 — 2박스: 성과 요약 + 액션 아이템 ══════
 // ══════════════════════════════════════════════
 // ══════════════════════════════════════════════════════════
-// INSIGHT ENGINE v5 — 감지 → 진단 → 처방 완전 연결
+// ══════════════════════════════════════════════════════════
+// INSIGHT ENGINE v6 — RPC 기반 캠페인 드릴다운
 // ══════════════════════════════════════════════════════════
 function isHoliday(d8){const dk=`${d8.slice(0,4)}-${d8.slice(4,6)}-${d8.slice(6,8)}`;return HOL[dk]||null;}
 function getDayName(d8){return['일','월','화','수','목','금','토'][s2d(d8).getDay()];}
@@ -1196,64 +1197,50 @@ function renderInsBox(elId,summary,actions){
     <div class="ins-card"><div class="ins-hd"><div class="ins-ico b">💡</div><div class="ins-ttl">액션 아이템</div></div>${actions.map(a=>`<div class="ins-item"><div style="flex-shrink:0">${insTag(a.tag)}</div><div>${a.t}</div></div>`).join('')}</div>`;
 }
 
-// 공유 컨텍스트
 let insightContext={events:[]};
 
-// ── 일별 데이터 빌드 (모든 탭에서 공유) ──
-function buildDailyData(rows,dates){
+// ── 일별 지표 빌드 (집계 데이터 기반, 캠페인 분해 없음) ──
+function buildDaily(rows,dates){
   const daily={};
   rows.filter(r=>dates.includes(String(r['날짜']||''))).forEach(r=>{
     const d=String(r['날짜']||'');if(d.length<8)return;
-    if(!daily[d])daily[d]={s:0,r:0,c:0,imp:0,o:0,byCamp:{}};
+    if(!daily[d])daily[d]={s:0,r:0,c:0,imp:0,o:0};
     daily[d].s+=N(r['광고비']);daily[d].r+=N(r['총 전환매출액(14일)']);daily[d].c+=N(r['클릭수']);daily[d].imp+=N(r['노출수']);daily[d].o+=N(r['총 주문수(14일)']);
-    const camp=(r['캠페인명']||'').trim();
-    if(!daily[d].byCamp[camp])daily[d].byCamp[camp]={s:0,r:0,c:0,imp:0,o:0};
-    daily[d].byCamp[camp].s+=N(r['광고비']);daily[d].byCamp[camp].r+=N(r['총 전환매출액(14일)']);daily[d].byCamp[camp].c+=N(r['클릭수']);daily[d].byCamp[camp].imp+=N(r['노출수']);daily[d].byCamp[camp].o+=N(r['총 주문수(14일)']);
   });
   return daily;
 }
 
-// ── 이벤트 감지 + 캠페인/키워드 드릴다운 ──
-function detectEvents(rows,cur,prev){
-  const events=[];
-  const daily=buildDailyData(rows,cur);
-  const dates=Object.keys(daily).sort();if(dates.length<2)return events;
+// ── 이상치 날짜 감지 (지표 레벨만) ──
+function detectAnomalyDates(rows,cur){
+  const anomalies=[];
+  const daily=buildDaily(rows,cur);
+  const dates=Object.keys(daily).sort();if(dates.length<3)return anomalies;
   const roasArr=dates.map(d=>daily[d].s>0?daily[d].r/daily[d].s*100:0);
   const cpcArr=dates.map(d=>daily[d].c>0?daily[d].s/daily[d].c:0);
   const roasM=roasArr.reduce((a,b)=>a+b,0)/roasArr.length,roasSD=stdDev(roasArr);
   const cpcM=cpcArr.reduce((a,b)=>a+b,0)/cpcArr.length,cpcSD=stdDev(cpcArr);
 
+  for(let i=1;i<dates.length;i++){
+    const d=dates[i],df=`${d.slice(4,6)}.${d.slice(6,8)}`;
+    const prevRoas=roasArr[i-1],prevCpc=cpcArr[i-1];
+    const cpcChgDay=prevCpc>0?((cpcArr[i]-prevCpc)/prevCpc*100):0;
+    const roasDrop=prevRoas-roasArr[i];
+    const isRoasLow=roasSD>0&&roasArr[i]<roasM-1.5*roasSD;
+    const isCpcHigh=cpcSD>0&&cpcArr[i]>cpcM+1.5*cpcSD;
+
+    if(isRoasLow||roasDrop>200){
+      anomalies.push({type:'roas_anomaly',date:d,df,roas:roasArr[i],prevRoas,drop:roasDrop,
+        cpcToday:cpcArr[i],cpcYday:prevCpc,cpcChgDay,isCpcHigh});
+    }
+    if(isCpcHigh){
+      anomalies.push({type:'cpc_spike',date:d,df,cpc:cpcArr[i],cpcM,pctUp:((cpcArr[i]-cpcM)/cpcM*100),cpcChgDay});
+    }
+  }
+
   // 추세
   let streak=0,dir=0;
   for(let i=1;i<roasArr.length;i++){const d=roasArr[i]-roasArr[i-1];if(d>0){dir>=0?(streak++,dir=1):(streak=1,dir=1);}else if(d<0){dir<=0?(streak++,dir=-1):(streak=1,dir=-1);}else{streak=0;dir=0;}}
-  if(streak>=3)events.push({type:'trend',dir,streak,startVal:roasArr[roasArr.length-streak-1],endVal:roasArr[roasArr.length-1]});
-
-  // 일별 이상치 — 전체 기간 내 모든 이상치 감지
-  for(let i=1;i<dates.length;i++){
-    const d=dates[i],df=`${d.slice(4,6)}.${d.slice(6,8)}`;
-    const prevCpc=cpcArr[i-1],prevRoas=roasArr[i-1];
-    const cpcChgDay=prevCpc>0?((cpcArr[i]-prevCpc)/prevCpc*100):0;
-    const roasDrop=prevRoas-roasArr[i];
-    const isRoasAnomaly=roasSD>0&&(roasArr[i]<roasM-1.5*roasSD);
-    const isCpcSpike=cpcSD>0&&(cpcArr[i]>cpcM+1.5*cpcSD);
-
-    if(isRoasAnomaly||roasDrop>200){
-      // 캠페인 분해: 해당 날짜에서 가장 하락에 기여한 캠페인
-      const campToday=daily[d].byCamp;const campYday=i>0?daily[dates[i-1]]?.byCamp||{}:{};
-      const campDrills=Object.keys(campToday).map(camp=>{
-        const ts=campToday[camp].s,tr=campToday[camp].r,tc=campToday[camp].c;
-        const tRoas=ts>0?tr/ts*100:0;const tCpc=tc>0?ts/tc:0;
-        const ps=campYday[camp]?.s||0,pr=campYday[camp]?.r||0,pc=campYday[camp]?.c||0;
-        const pRoas=ps>0?pr/ps*100:0;const pCpc=pc>0?ps/pc:0;
-        return{camp,roas:tRoas,prevRoas:pRoas,roasChg:tRoas-pRoas,cpc:tCpc,prevCpc:pCpc,cpcChg:pCpc>0?((tCpc-pCpc)/pCpc*100):0,spend:ts,rev:tr,spendPct:daily[d].s>0?ts/daily[d].s*100:0};
-      }).filter(c=>c.spend>5000).sort((a,b)=>a.roasChg-b.roasChg);
-
-      events.push({type:'roas_anomaly',date:d,df,roas:roasArr[i],prevRoas,drop:roasDrop,cpcToday:cpcArr[i],cpcYday:prevCpc,cpcChgDay,camps:campDrills.slice(0,3)});
-    }
-    if(isCpcSpike){
-      events.push({type:'cpc_spike',date:d,df,cpc:cpcArr[i],cpcM,pctUp:((cpcArr[i]-cpcM)/cpcM*100),cpcChgDay});
-    }
-  }
+  if(streak>=3)anomalies.push({type:'trend',dir,streak,startVal:roasArr[roasArr.length-streak-1],endVal:roasArr[roasArr.length-1]});
 
   // 공휴일
   HOL_RANGES.forEach(hr=>{
@@ -1263,10 +1250,31 @@ function detectEvents(rows,cur,prev){
     const pre=new Date(s2d(holDates[0]));pre.setDate(pre.getDate()-holDates.length);
     const preDates=[];for(let j=0;j<holDates.length;j++){const pd=new Date(pre);pd.setDate(pd.getDate()+j);preDates.push(d2s(pd));}
     const preS=preDates.reduce((a,d)=>a+(daily[d]?.s||0),0);
-    if(preS>0)events.push({type:'holiday',name:hr.name,days:holDates.length,roas:holRoas,preRoas:preDates.reduce((a,d)=>a+(daily[d]?.r||0),0)/preS*100,spendChg:((holS-preS)/preS*100)});
+    if(preS>0)anomalies.push({type:'holiday',name:hr.name,days:holDates.length,roas:holRoas,preRoas:preDates.reduce((a,d)=>a+(daily[d]?.r||0),0)/preS*100,spendChg:((holS-preS)/preS*100)});
   });
 
-  return events;
+  return anomalies;
+}
+
+// ── RPC 기반 캠페인 드릴다운 (이상치 날짜 → 캠페인별 분해) ──
+async function drillCampRpc(eventDate,prevDate){
+  const todayCamps=await loadCampAgg([eventDate]);
+  const ydayCamps=prevDate?await loadCampAgg([prevDate]):[];
+  if(!todayCamps||!todayCamps.length)return[];
+  const ydayMap={};(ydayCamps||[]).forEach(c=>{
+    ydayMap[c.campaign]={s:Number(c.spend),r:Number(c.rev),c:Number(c.clicks)};
+  });
+  const totalSpend=todayCamps.reduce((s,c)=>s+Number(c.spend),0);
+  return todayCamps.map(c=>{
+    const s=Number(c.spend),r=Number(c.rev),cl=Number(c.clicks);
+    const roas=s>0?r/s*100:0,cpc=cl>0?s/cl:0;
+    const y=ydayMap[c.campaign]||{s:0,r:0,c:0};
+    const yRoas=y.s>0?y.r/y.s*100:0,yCpc=y.c>0?y.s/y.c:0;
+    return{camp:c.campaign,spend:s,rev:r,roas,cpc,
+      prevRoas:yRoas,roasChg:roas-yRoas,
+      prevCpc:yCpc,cpcChg:yCpc>0?((cpc-yCpc)/yCpc*100):0,
+      spendPct:totalSpend>0?s/totalSpend*100:0};
+  }).filter(c=>c.spend>5000).sort((a,b)=>a.roasChg-b.roasChg);
 }
 
 // ══════ 성과 대시보드 인사이트 ══════
@@ -1281,7 +1289,7 @@ async function renderInsRpc(cur,prev,t){
   else summary.push({icon:'⚠️',t:`광고수익률 <b>${Cp(c.roas)}</b> — 목표(${C(t)}%) 대비 <b style="color:var(--red)">${exceed}%p 미달</b>`});
 
   // 이벤트 감지
-  const events=detectEvents(rows,cur,prev);
+  const events=detectAnomalyDates(rows,cur);
   insightContext.events=events;
 
   // 추세
@@ -1289,37 +1297,42 @@ async function renderInsRpc(cur,prev,t){
   if(trend){const chg=Math.round(trend.endVal-trend.startVal);
     if(trend.dir>0)summary.push({icon:'📈',t:`광고수익률 <b>${trend.streak}일 이상 연속 상승</b> (${C(Math.round(trend.startVal))}% → ${C(Math.round(trend.endVal))}%, <b style="color:var(--green)">+${chg}%p</b>)`});
     else{summary.push({icon:'📉',t:`광고수익률 <b>${trend.streak}일 이상 연속 하락</b> (${C(Math.round(trend.startVal))}% → ${C(Math.round(trend.endVal))}%, <b style="color:var(--red)">${chg}%p</b>)`});
-      actions.push({tag:'즉시 조치',t:`${trend.streak}일 연속 하락 중 — 캠페인별/키워드별 효율 점검 후 저성과 항목 예산 축소 검토`});}}
+      actions.push({tag:'즉시 조치',t:`${trend.streak}일 연속 하락 — 캠페인별/키워드별 효율 점검 후 저성과 항목 예산 축소 검토`});}}
 
-  // 이상치 이벤트 (ROAS 급변)
+  // ROAS 이상치 → RPC로 캠페인 드릴다운
   const roasEvents=events.filter(e=>e.type==='roas_anomaly');
   for(const ev of roasEvents){
-    // 성과 요약: CPC 변동 포함해서 정확히 기술
+    // 성과 요약
     let sumText=`${ev.df} 광고수익률 ${C(Math.round(ev.prevRoas))}% → ${C(Math.round(ev.roas))}% (<b style="color:var(--red)">${Math.round(ev.drop)}%p 하락</b>)`;
     if(Math.abs(ev.cpcChgDay)>10)sumText+=` + 클릭당비용 ${ev.cpcChgDay>0?'+':''}${Math.round(ev.cpcChgDay)}%`;
     summary.push({icon:'⚡',t:sumText});
 
-    // 액션: 캠페인 드릴다운 결과 포함
+    // 캠페인 드릴다운 (RPC)
+    const allDates=[...cur].sort();
+    const dateIdx=allDates.indexOf(ev.date);
+    const prevDate=dateIdx>0?allDates[dateIdx-1]:null;
+    const camps=await drillCampRpc(ev.date,prevDate);
+
     let actText=`${ev.df} 하락 원인 분석: `;
-    if(ev.camps.length){
-      const top=ev.camps[0];
-      actText+=`주요 원인 '<b>${top.camp.slice(0,15)}</b>' 캠페인 (광고비 비중 ${top.spendPct.toFixed(0)}%, 수익률 ${C(Math.round(top.prevRoas))}%→${C(Math.round(top.roas))}%)`;
-      if(Math.abs(top.cpcChg)>15)actText+=`. 해당 캠페인 클릭당비용 +${Math.round(top.cpcChg)}% 상승 — <b>입찰가 조정</b> 또는 <b>수동 전환</b> 검토`;
+    if(camps.length){
+      const worst=camps[0];// roasChg가 가장 낮은 캠페인
+      actText+=`주요 원인 '<b>${worst.camp.slice(0,18)}</b>' (광고비 비중 ${worst.spendPct.toFixed(0)}%, 수익률 ${C(Math.round(worst.prevRoas))}%→${C(Math.round(worst.roas))}%, <b>${Math.round(worst.roasChg)}%p</b>)`;
+      if(worst.cpcChg>15)actText+=`. 해당 캠페인 클릭당비용 +${Math.round(worst.cpcChg)}% (₩${C(Math.round(worst.prevCpc))}→₩${C(Math.round(worst.cpc))}) — <b>입찰가 조정</b> 또는 <b>해당 키워드 수동 전환</b> 검토`;
       else actText+=`. 클릭당비용 변동 미미 — <b>경쟁사 프로모션/시장 변화</b> 모니터링 필요`;
-      if(ev.camps.length>1)actText+=`. 추가 하락 캠페인: '${ev.camps[1].camp.slice(0,12)}' (${C(Math.round(ev.camps[1].roasChg))}%p)`;
+      if(camps.length>1&&camps[1].roasChg<-100)actText+=`. 추가: '${camps[1].camp.slice(0,12)}' ${Math.round(camps[1].roasChg)}%p`;
     }else{
-      if(ev.cpcChgDay>15)actText+=`클릭당비용 +${Math.round(ev.cpcChgDay)}% 상승 — 입찰 경쟁 심화. 주요 키워드 입찰가 점검`;
-      else actText+=`클릭당비용 변동 미미 — 경쟁사 프로모션, 시장 변화 등 외부 요인 확인`;
+      actText+=`캠페인 상세 데이터 조회 불가 — 캠페인 분석 탭에서 해당 날짜 확인 필요`;
     }
     actions.push({tag:'즉시 조치',t:actText});
+    // 컨텍스트에 캠페인 분해 결과 저장
+    ev.campDrill=camps;
   }
 
-  // CPC 스파이크
-  const cpcEvents=events.filter(e=>e.type==='cpc_spike');
-  for(const ev of cpcEvents){
-    if(!roasEvents.find(r=>r.date===ev.date))// ROAS 이벤트와 중복 아닐때만
+  // CPC 스파이크 (ROAS 이벤트와 겹치지 않는 것만)
+  events.filter(e=>e.type==='cpc_spike').forEach(ev=>{
+    if(!roasEvents.find(r=>r.date===ev.date))
       summary.push({icon:'⚡',t:`${ev.df} 클릭당비용 ₩${C(Math.round(ev.cpc))} — 평균(₩${C(Math.round(ev.cpcM))}) 대비 <b style="color:var(--red)">+${Math.round(ev.pctUp)}%</b>`});
-  }
+  });
 
   // 공휴일
   events.filter(e=>e.type==='holiday').forEach(ev=>{
@@ -1328,13 +1341,13 @@ async function renderInsRpc(cur,prev,t){
 
   // 키워드 집중도
   if(kwData&&kwData.length>=3){const tr=kwData.reduce((s,d)=>s+Number(d.rev||0),0);const t3=kwData.slice(0,3).reduce((s,d)=>s+Number(d.rev||0),0);const pct=tr>0?t3/tr*100:0;
-    if(pct>=60)actions.push({tag:'모니터링',t:`전환매출 상위 3개 키워드가 전체의 <b>${Math.round(pct)}%</b> — 특정 키워드 의존도 높음. 키워드 다변화로 리스크 분산 권장`});}
+    if(pct>=60)actions.push({tag:'모니터링',t:`전환매출 상위 3개 키워드가 전체의 <b>${Math.round(pct)}%</b> — 키워드 다변화로 리스크 분산 권장`});}
 
-  // 캠페인 기반 추천
+  // 캠페인 추천
   const campData=await loadCampAgg(cur);
-  if(campData){const cl=campData.filter(v=>Number(v.spend)>10000).map(v=>{const ct=typeof getCampTarget==='function'?getCampTarget(v.campaign):t;return{name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0,spend:Number(v.spend),rev:Number(v.rev),target:ct};});
+  if(campData){const cl=campData.filter(v=>Number(v.spend)>10000).map(v=>{const ct=typeof getCampTarget==='function'?getCampTarget(v.campaign):t;return{name:v.campaign,roas:Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0,spend:Number(v.spend),target:ct};});
     const topC=cl.sort((a,b)=>b.roas-a.roas)[0];const botC=cl.sort((a,b)=>a.roas-b.roas)[0];
-    if(topC&&topC.roas>=topC.target*1.5&&topC.spend>0)actions.push({tag:'모니터링',t:`'${topC.name.slice(0,15)}' 수익률 ${C(Math.round(topC.roas))}% (목표의 <b>${(topC.roas/topC.target).toFixed(1)}배</b>) — 예산 비중 확대 검토`});
+    if(topC&&topC.roas>=topC.target*1.5)actions.push({tag:'모니터링',t:`'${topC.name.slice(0,15)}' 수익률 ${C(Math.round(topC.roas))}% (목표의 <b>${(topC.roas/topC.target).toFixed(1)}배</b>) — 예산 비중 확대 검토`});
     if(botC&&botC.roas<botC.target*.3)actions.push({tag:'즉시 조치',t:`'${botC.name.slice(0,15)}' 수익률 ${C(Math.round(botC.roas))}% (목표의 ${Math.round(botC.roas/botC.target*100)}%) — 입찰가/예산 축소 검토`});}
 
   renderInsBox('insRow',summary,actions);
@@ -1350,41 +1363,37 @@ function renderCampIns(data,t){
   if(highRoas.length)summary.push({icon:'✅',t:`${data.length}개 중 <b>${highRoas.length}개(${pct}%)</b> 캠페인 개별 목표 달성`});
   if(sorted[0])summary.push({icon:'🏆',t:`최고 효율: <b>${sorted[0].name.slice(0,18)}</b> — 수익률 ${C(Math.round(sorted[0].roas))}% (목표 대비 <b>+${Math.round(sorted[0].roas-sorted[0].target)}%p</b>)`});
 
-  // 공유 컨텍스트: 성과 대시보드 이벤트 참조
-  const dropEvents=insightContext.events.filter(e=>e.type==='roas_anomaly');
+  // 공유 컨텍스트: 이벤트에서 캠페인 드릴다운 결과 활용
+  const dropEvents=insightContext.events.filter(e=>e.type==='roas_anomaly'&&e.campDrill&&e.campDrill.length);
   for(const ev of dropEvents){
-    if(ev.camps.length){
-      const affected=ev.camps.filter(c=>c.roasChg<-50);
-      if(affected.length){
-        summary.push({icon:'⚡',t:`${ev.df} 이슈 영향: ${affected.map(c=>`'${c.camp.slice(0,12)}' 수익률 ${Math.round(c.roasChg)}%p`).join(', ')}`});
-        affected.forEach(c=>{
-          let act=`'<b>${c.camp.slice(0,15)}</b>' ${ev.df} 수익률 급락 (${C(Math.round(c.prevRoas))}%→${C(Math.round(c.roas))}%)`;
-          if(c.cpcChg>15)act+=` — 클릭당비용 +${Math.round(c.cpcChg)}% 상승. <b>해당 캠페인 주요 키워드 입찰가 점검</b> 및 경쟁사 동향 모니터링`;
-          else act+=` — 클릭당비용 변동 미미. <b>경쟁사 프로모션/가격 변화</b> 모니터링 필요`;
-          actions.push({tag:'즉시 조치',t:act});
-        });
-      }
+    const affected=ev.campDrill.filter(c=>c.roasChg<-100);
+    if(affected.length){
+      summary.push({icon:'⚡',t:`${ev.df} 이슈 영향: ${affected.slice(0,2).map(c=>`'${c.camp.slice(0,12)}' ${C(Math.round(c.prevRoas))}%→${C(Math.round(c.roas))}%`).join(', ')}`});
+      affected.slice(0,2).forEach(c=>{
+        let act=`'<b>${c.camp.slice(0,18)}</b>' ${ev.df} 수익률 ${C(Math.round(c.prevRoas))}%→${C(Math.round(c.roas))}% (<b>${Math.round(c.roasChg)}%p</b>)`;
+        if(c.cpcChg>15)act+=` — 클릭당비용 +${Math.round(c.cpcChg)}%. <b>해당 캠페인 키워드 입찰가 점검</b> + 경쟁사 동향 모니터링`;
+        else act+=` — 클릭당비용 변동 미미. <b>경쟁사 프로모션/가격 변화</b> 모니터링`;
+        actions.push({tag:'즉시 조치',t:act});
+      });
     }
   }
 
-  // 추세 캠페인
   const improving=data.filter(d=>d.roasChg!==null&&d.roasChg>20);
   const declining=data.filter(d=>d.roasChg!==null&&d.roasChg<-30&&d.spend>50000);
   if(improving.length)summary.push({icon:'📈',t:`${improving.length}개 캠페인 상승: ${improving.slice(0,2).map(d=>`'${d.name.slice(0,12)}' +${Math.round(d.roasChg)}%p`).join(', ')}`});
 
-  // 효율 격차 → 예산 재배분
+  // 효율 격차
   if(data.length>=4){const top3=sorted.slice(0,3).reduce((s,d)=>s+d.roas,0)/3;const botS=[...data].sort((a,b)=>a.roas-b.roas);const bot3=botS.slice(0,3).reduce((s,d)=>s+d.roas,0)/3;
-    if(top3>0&&bot3>0&&top3/bot3>=3){const bs=botS.slice(0,3).reduce((s,d)=>s+d.spend,0);actions.push({tag:'즉시 조치',t:`상위 3개 평균 ${C(Math.round(top3))}% vs 하위 3개 ${C(Math.round(bot3))}% (<b>${(top3/bot3).toFixed(1)}배</b> 격차) — 하위 캠페인 광고비(${fW(bs)}) 상위로 재배분 검토`});}}
+    if(top3>0&&bot3>0&&top3/bot3>=3){const bs=botS.slice(0,3).reduce((s,d)=>s+d.spend,0);actions.push({tag:'즉시 조치',t:`상위 3개 평균 ${C(Math.round(top3))}% vs 하위 3개 ${C(Math.round(bot3))}% (<b>${(top3/bot3).toFixed(1)}배</b> 격차) — 하위 광고비(${fW(bs)}) 상위 재배분 검토`});}}
 
-  // 상승 추세 캠페인 → 증액 제안
+  // 상승+목표초과 → 증액
   const goodTrend=improving.filter(d=>d.roas>=d.target&&d.roasChg>30);
-  if(goodTrend.length)actions.push({tag:'모니터링',t:`'${goodTrend[0].name.slice(0,15)}' 수익률 상승 추세(+${Math.round(goodTrend[0].roasChg)}%p) + 목표 초과 달성 — <b>예산 증액</b> 검토 시 매출 확대 가능성`});
+  if(goodTrend.length)actions.push({tag:'모니터링',t:`'${goodTrend[0].name.slice(0,15)}' 수익률 상승(+${Math.round(goodTrend[0].roasChg)}%p) + 목표 초과 — <b>예산 증액</b> 시 매출 확대 가능`});
 
-  // 저성과 캠페인
   const inefficient=data.filter(d=>d.spendPct>3&&d.revPct/d.spendPct<0.5);
-  if(inefficient[0])actions.push({tag:'즉시 조치',t:`'${inefficient[0].name.slice(0,15)}' 효율 저조 — 광고비 ${inefficient[0].spendPct.toFixed(1)}% 투입 대비 매출 <b>${inefficient[0].revPct.toFixed(1)}%</b>만 기여. 예산 축소 또는 키워드 재검토`});
+  if(inefficient[0])actions.push({tag:'즉시 조치',t:`'${inefficient[0].name.slice(0,15)}' 효율 저조 — 광고비 ${inefficient[0].spendPct.toFixed(1)}% 대비 매출 <b>${inefficient[0].revPct.toFixed(1)}%</b>. 예산 축소 또는 키워드 재검토`});
   if(lowRoas.length)actions.push({tag:'즉시 조치',t:`${lowRoas.length}개 캠페인 목표 50% 미만: ${lowRoas.slice(0,2).map(d=>`'${d.name.slice(0,12)}' ${C(Math.round(d.roas))}%(목표 ${C(Math.round(d.target))}%)`).join(', ')}`});
-  if(declining.length)actions.push({tag:'모니터링',t:`하락 추세 ${declining.length}개: ${declining.slice(0,2).map(d=>`'${d.name.slice(0,12)}' ${Math.round(d.roasChg)}%p`).join(', ')} — 추가 하락 시 예산 조정 필요`});
+  if(declining.length)actions.push({tag:'모니터링',t:`하락 ${declining.length}개: ${declining.slice(0,2).map(d=>`'${d.name.slice(0,12)}' ${Math.round(d.roasChg)}%p`).join(', ')}`});
 
   renderInsBox('campInsRow',summary,actions);
 }
@@ -1395,24 +1404,20 @@ function renderCpcIns(aAgg,mAgg,aPrev,mPrev,rows,cur){
   const prev=getPer(rows,cpcP,'cpc').prev;
   const aDiff=pD(aAgg.cpc,aPrev.cpc),aRoasD=pD(aAgg.roas,aPrev.roas);
 
-  // 매출최적화 vs 수동
   if(aAgg.roas>0&&mAgg.roas>0){const diff=Math.round(aAgg.roas-mAgg.roas);
     if(diff>0)summary.push({icon:'📊',t:`매출최적화 수익률 <b>${Cp(aAgg.roas)}</b> — 수동(${Cp(mAgg.roas)}) 대비 <b>+${diff}%p</b>`});
     else summary.push({icon:'📊',t:`수동 수익률 <b>${Cp(mAgg.roas)}</b> — 매출최적화 대비 <b>+${Math.abs(diff)}%p</b>. 수동 효율 우수`});}
 
-  // 공유 컨텍스트: 성과 대시보드 CPC 이벤트 참조
-  const cpcEvents=insightContext.events.filter(e=>e.type==='cpc_spike');
-  const roasEvents=insightContext.events.filter(e=>e.type==='roas_anomaly');
-  cpcEvents.forEach(ev=>{
-    summary.push({icon:'⚡',t:`${ev.df} 전체 클릭당비용 ₩${C(Math.round(ev.cpc))} (전일 대비 <b>+${Math.round(ev.cpcChgDay)}%</b>, 평균 대비 +${Math.round(ev.pctUp)}%) — 아래 키워드별 상세`});
+  // 공유 컨텍스트 CPC 이벤트
+  insightContext.events.filter(e=>e.type==='cpc_spike').forEach(ev=>{
+    summary.push({icon:'⚡',t:`${ev.df} 전체 클릭당비용 ₩${C(Math.round(ev.cpc))} (전일 대비 <b>+${Math.round(ev.cpcChgDay)}%</b>) — 아래 키워드 상세`});
   });
 
-  // 전체 CPC/ROAS 변동
-  if(aDiff!==null&&aDiff>10)summary.push({icon:'📈',t:`매출최적화 클릭당비용 ₩${C(Math.round(aPrev.cpc))}→₩${C(Math.round(aAgg.cpc))} (<b>+${aDiff.toFixed(1)}%</b>) — 입찰 경쟁 심화 추세`});
-  if(aDiff!==null&&aDiff<-5)summary.push({icon:'✅',t:`매출최적화 클릭당비용 ₩${C(Math.round(aPrev.cpc))}→₩${C(Math.round(aAgg.cpc))} (<b>${Math.abs(aDiff).toFixed(1)}% 감소</b>)`});
+  if(aDiff!==null&&aDiff>10)summary.push({icon:'📈',t:`매출최적화 클릭당비용 ₩${C(Math.round(aPrev.cpc))}→₩${C(Math.round(aAgg.cpc))} (<b>+${aDiff.toFixed(1)}%</b>) — 입찰 경쟁 심화`});
+  if(aDiff!==null&&aDiff<-5)summary.push({icon:'✅',t:`매출최적화 클릭당비용 ${Math.abs(aDiff).toFixed(1)}% 감소`});
   if(aRoasD!==null&&aRoasD>10)summary.push({icon:'📈',t:`매출최적화 수익률 ${Cp(aPrev.roas)}→${Cp(aAgg.roas)} (<b>+${Math.round(aAgg.roas-aPrev.roas)}%p</b>)`});
 
-  // 키워드 분석 (매출 TOP100)
+  // 키워드 분석 (TOP100)
   const fr=rows.filter(r=>cur.includes(String(r['날짜']||'')));
   const prevFr=rows.filter(r=>prev.includes(String(r['날짜']||'')));
   const kwCur={},kwPrv={};
@@ -1420,32 +1425,31 @@ function renderCpcIns(aAgg,mAgg,aPrev,mPrev,rows,cur){
   prevFr.forEach(r=>{const kw=(r['키워드']||'').trim();if(!kw||kw==='-'||kw==='비검색')return;const pl=(r['광고 노출 지면']||'').trim();if(pl.includes('리타겟팅')||pl.includes('오디언스 플러스'))return;if(!kwPrv[kw])kwPrv[kw]={s:0,c:0,r:0};kwPrv[kw].s+=N(r['광고비']);kwPrv[kw].c+=N(r['클릭수']);kwPrv[kw].r+=N(r['총 전환매출액(14일)']);});
   const top100=new Set(Object.entries(kwCur).sort((a,b)=>b[1].r-a[1].r).slice(0,100).map(([k])=>k));
 
-  // CPC 급등 키워드 → 성과요약(감지) + 액션(수동 전환 구체 제안)
+  // CPC 급등 → 성과요약(감지) + 액션(ROAS 기반 구체 처방)
   const cpcSpike=Object.entries(kwCur).filter(([kw,v])=>top100.has(kw)&&v.c>=10&&kwPrv[kw]&&kwPrv[kw].c>=5).map(([kw,v])=>{const cc=v.s/v.c,pc=kwPrv[kw].s/kwPrv[kw].c;return{kw,cc,pc,chg:((cc-pc)/pc*100),rev:v.r,roas:v.s>0?v.r/v.s*100:0};}).filter(d=>d.chg>20).sort((a,b)=>b.chg-a.chg).slice(0,3);
   if(cpcSpike.length){
     summary.push({icon:'⚡',t:`클릭당비용 급등 (매출 상위): ${cpcSpike.map(d=>`'<b>${d.kw}</b>' ₩${C(Math.round(d.pc))}→₩${C(Math.round(d.cc))}(+${Math.round(d.chg)}%)`).join(', ')}`});
     cpcSpike.forEach(d=>{
-      if(d.roas>=800)actions.push({tag:'즉시 조치',t:`'<b>${d.kw}</b>' 클릭당비용 +${Math.round(d.chg)}% 급등하나 수익률 ${C(Math.round(d.roas))}%로 양호 — <b>수동 캠페인 전환</b>으로 ₩${C(Math.round(d.pc))} 수준 입찰가 직접 설정 검토`});
-      else actions.push({tag:'모니터링',t:`'<b>${d.kw}</b>' 클릭당비용 +${Math.round(d.chg)}% + 수익률 ${C(Math.round(d.roas))}%로 저조 — <b>예산 축소</b> 또는 일시 중단 검토`});
+      if(d.roas>=800)actions.push({tag:'즉시 조치',t:`'<b>${d.kw}</b>' 클릭당비용 +${Math.round(d.chg)}%이나 수익률 ${C(Math.round(d.roas))}% 양호 — <b>수동 전환</b> 후 ₩${C(Math.round(d.pc))} 수준 입찰가 설정 검토`});
+      else actions.push({tag:'즉시 조치',t:`'<b>${d.kw}</b>' 클릭당비용 +${Math.round(d.chg)}% + 수익률 ${C(Math.round(d.roas))}% 저조 — <b>예산 축소</b> 또는 일시 중단`});
     });
   }
 
-  // ROAS 급락 키워드 → 원인(CPC 기반) + 구체 처방
-  const roasDrop=Object.entries(kwCur).filter(([kw,v])=>top100.has(kw)&&v.s>=10000&&kwPrv[kw]&&kwPrv[kw].s>=5000).map(([kw,v])=>{const cr=v.s>0?v.r/v.s*100:0,pr=kwPrv[kw].s>0?kwPrv[kw].r/kwPrv[kw].s*100:0;const cc=v.c>0?v.s/v.c:0,pc=kwPrv[kw].c>0?kwPrv[kw].s/kwPrv[kw].c:0;return{kw,cr,pr,chgP:cr-pr,cpcChg:pc>0?((cc-pc)/pc*100):0,cc,pc,rev:v.r};}).filter(d=>d.chgP<-100).sort((a,b)=>a.chgP-b.chgP).slice(0,3);
+  // ROAS 급락 키워드
+  const roasDrop=Object.entries(kwCur).filter(([kw,v])=>top100.has(kw)&&v.s>=10000&&kwPrv[kw]&&kwPrv[kw].s>=5000).map(([kw,v])=>{const cr=v.s>0?v.r/v.s*100:0,pr=kwPrv[kw].s>0?kwPrv[kw].r/kwPrv[kw].s*100:0;const cc=v.c>0?v.s/v.c:0,pc=kwPrv[kw].c>0?kwPrv[kw].s/kwPrv[kw].c:0;return{kw,cr,pr,chgP:cr-pr,cpcChg:pc>0?((cc-pc)/pc*100):0,cc,pc};}).filter(d=>d.chgP<-100).sort((a,b)=>a.chgP-b.chgP).slice(0,3);
   roasDrop.forEach(d=>{
     let act=`'<b>${d.kw}</b>' 수익률 ${C(Math.round(d.pr))}%→${C(Math.round(d.cr))}% (<b>${Math.round(d.chgP)}%p</b>)`;
-    if(d.cpcChg>15)act+=`. 클릭당비용 +${Math.round(d.cpcChg)}% — <b>수동 전환 후 입찰가 ₩${C(Math.round(d.pc))} 수준으로 설정</b> 또는 예산 축소`;
-    else act+=`. 클릭당비용 변동 미미 — <b>경쟁사 동향 확인</b> 후 키워드 유지/중단 판단`;
+    if(d.cpcChg>15)act+=`. 클릭당비용 +${Math.round(d.cpcChg)}% (₩${C(Math.round(d.pc))}→₩${C(Math.round(d.cc))}) — <b>수동 전환 후 입찰가 ₩${C(Math.round(d.pc))} 설정</b> 또는 예산 축소`;
+    else act+=`. 클릭당비용 변동 미미 — <b>경쟁사 동향 확인</b> 후 유지/중단 판단`;
     actions.push({tag:'즉시 조치',t:act});
   });
 
   // 수동 전환 추천
   const manKws=new Set();fr.filter(r=>(r['캠페인명']||'').includes('수동')).forEach(r=>{const kw=(r['키워드']||'').trim();if(kw&&kw!=='-')manKws.add(kw);});
   const cands=Object.entries(kwCur).filter(([kw,v])=>top100.has(kw)&&!manKws.has(kw)&&v.c>=30&&v.s>0&&v.r/v.s*100>=800&&v.r>=100000).map(([kw,v])=>({kw,roas:v.r/v.s*100,rev:v.r})).sort((a,b)=>b.rev-a.rev).slice(0,3);
-  if(cands.length)actions.push({tag:'즉시 조치',t:`수동 전환 추천: ${cands.map(d=>`'<b>${d.kw}</b>'(수익률 ${C(Math.round(d.roas))}%, 매출 ${fW(d.rev)})`).join(', ')} — 수동 전환으로 클릭당비용 직접 통제 시 효율 개선`});
+  if(cands.length)actions.push({tag:'즉시 조치',t:`수동 전환 추천: ${cands.map(d=>`'<b>${d.kw}</b>'(수익률 ${C(Math.round(d.roas))}%, 매출 ${fW(d.rev)})`).join(', ')}`});
 
-  // 전체 하락 시 처방
-  if(aRoasD!==null&&aRoasD<-15)actions.push({tag:'즉시 조치',t:`매출최적화 수익률 ${Cp(aPrev.roas)}→${Cp(aAgg.roas)} (<b>${Math.round(aAgg.roas-aPrev.roas)}%p</b>) — 저성과 키워드 예산 축소 + 고성과 키워드 집중`});
+  if(aRoasD!==null&&aRoasD<-15)actions.push({tag:'즉시 조치',t:`매출최적화 수익률 ${Cp(aPrev.roas)}→${Cp(aAgg.roas)} (<b>${Math.round(aAgg.roas-aPrev.roas)}%p</b>) — 저성과 키워드 예산 축소 + 고성과 집중`});
 
   renderInsBox('cpcInsRow',summary,actions);
 }
