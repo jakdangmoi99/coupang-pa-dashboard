@@ -1095,7 +1095,7 @@ async function renderMain(){
       if(ts>0)mixRoas=Math.round(items.reduce((a,v)=>a+v.target*v.spend,0)/ts);
       // 캠페인 탭이 같은 기간이면 거기 값과 동기화
       window._mainMixRoas=mixRoas;
-      console.log('[MIX DEBUG] renderMain:', {mixRoas, campCount:campD.length, camps:campD.map(c=>({n:c.campaign,s:Number(c.spend),t:getCampTarget(c.campaign)}))});
+      console.log('[MIX DEBUG] renderMain: mixRoas='+mixRoas+', campCount='+campD.length+', hideInactive='+!!(document.getElementById('campHideInactive')?.checked)+', camps='+JSON.stringify(campD.map(c=>({n:c.campaign.slice(0,15),s:Number(c.spend),t:getCampTarget(c.campaign)}))));
     }
   }catch(e){}
   document.getElementById('roasT').value=mixRoas;
@@ -2488,7 +2488,7 @@ async function renderCampPage(){
   // 성과 대시보드와 기간이 같으면 동기화
   if(campP===mainP)window._mainMixRoas=mixTarget;
   window._campMixRoas=mixTarget;
-  console.log('[MIX DEBUG] campPage:', {mixTarget, campCount:tblData.length, camps:tblData.map(d=>({n:d.name,s:d.spend,t:d.target}))});
+  console.log('[MIX DEBUG] campPage: mixTarget='+mixTarget+', campCount='+tblData.length+', hideInactive='+!!(document.getElementById('campHideInactive')?.checked)+', camps='+JSON.stringify(tblData.map(d=>({n:d.name.slice(0,15),s:Math.round(d.spend),t:d.target}))));
   const mixEl=document.getElementById('campMixRoas');
   if(mixEl)mixEl.innerHTML=`MIX 목표 광고수익률: <b style="color:var(--accent)">${C(Math.round(mixTarget))}%</b> <span style="font-size:10px;color:var(--text3)">(캠페인별 목표의 광고비 가중평균)</span>`;
   const selName=slideCampName;
