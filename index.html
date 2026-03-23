@@ -1,7 +1,6 @@
 <!DOCTYPE html>
 <html lang="ko" data-theme="dark">
 <head>
-  <!-- dev 브랜치 테스트 -->
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
 <title>쿠팡 PA 브리핑 센터 | Seller HQ</title>
@@ -12,7 +11,8 @@
 <style>
 [data-theme="dark"]{--bg:#07111f;--surf:#0d1c30;--surf2:#122238;--surf3:#162840;--border:#1a3050;--border2:#1e3860;--accent:#3d8ef8;--accent2:#00d4b4;--accent3:#7c6af7;--green:#00e09a;--yellow:#ffbe3d;--red:#ff4466;--orange:#ff8c42;--text:#e8f0fe;--text2:#7a9abf;--text3:#304560;--cs:0 2px 12px rgba(0,0,0,.3);}
 [data-theme="light"]{--bg:#f0f4fa;--surf:#fff;--surf2:#f5f7fc;--surf3:#edf1f9;--border:#d0daea;--border2:#b8ccdf;--accent:#1a6ef5;--accent2:#00a896;--accent3:#6c5ce7;--green:#00875a;--yellow:#b45309;--red:#dc2626;--orange:#c05a00;--text:#0d1f36;--text2:#3d5c7a;--text3:#8ba4be;--cs:0 2px 12px rgba(0,0,0,.07);}
-*{margin:0;padding:0;box-sizing:border-box;}html{scroll-behavior:smooth;}
+*{margin:0;padding:0;box-sizing:border-box;-webkit-user-select:none;-moz-user-select:none;user-select:none;}
+input,textarea,select,[contenteditable]{-webkit-user-select:text;-moz-user-select:text;user-select:text;}html{scroll-behavior:smooth;}
 body{background:var(--bg);color:var(--text);font-family:"Pretendard",sans-serif;min-height:100vh;transition:background .3s,color .3s;font-size:14px;}
 [data-theme="dark"] body::before{content:"";position:fixed;inset:0;background:radial-gradient(ellipse 90% 60% at 15% 0%,rgba(61,142,248,.07) 0%,transparent 55%),radial-gradient(ellipse 70% 50% at 85% 100%,rgba(0,212,180,.05) 0%,transparent 55%);pointer-events:none;z-index:0;}
 ::-webkit-scrollbar{width:5px;height:5px;}::-webkit-scrollbar-track{background:var(--surf);}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px;}
@@ -783,6 +783,24 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 </div><!-- /main-area -->
 </div><!-- /app -->
 <script>
+// ════ 보안: 우클릭·개발자도구·텍스트선택 방지 ════
+(function(){
+  // 우클릭 방지
+  document.addEventListener('contextmenu',e=>e.preventDefault());
+  // 키보드 단축키 방지 (F12, Ctrl+Shift+I/J/C, Ctrl+U)
+  document.addEventListener('keydown',e=>{
+    if(e.key==='F12')e.preventDefault();
+    if(e.ctrlKey&&e.shiftKey&&['I','J','C'].includes(e.key))e.preventDefault();
+    if(e.ctrlKey&&e.key==='u')e.preventDefault();
+    if(e.ctrlKey&&e.key==='s')e.preventDefault();
+  });
+  // 텍스트 드래그 선택 방지 (input/textarea 제외)
+  document.addEventListener('selectstart',e=>{
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA'||e.target.tagName==='SELECT')return;
+    e.preventDefault();
+  });
+})();
+
 // ════ Supabase 설정 ════
 const SUPABASE_URL='https://jzzwrlvtospuwntnafhn.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6endybHZ0b3NwdXdudG5hZmhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MTgwMzQsImV4cCI6MjA4ODE5NDAzNH0.9txsHj4bm5iB4L4LfKgU0pRGZK0yJsHhNyFBh7_HMsw';
