@@ -1754,12 +1754,16 @@ async function renderProdRpc(cur,prev,t){
   const pm={};(prevData||[]).forEach((d,i)=>pm[d.product]=i+1);
   const outProds=(prevData||[]).slice(0,10).filter(d=>!curProds.has(d.product));
   
-  document.querySelector('#prodT thead').innerHTML='<tr><th style="width:30px">#</th><th style="min-width:180px">상품명</th><th>광고비</th><th>전환매출(14일)</th><th>광고수익률</th><th>주문수(14일)</th><th>순위변동</th></tr>';
+  document.querySelector('#prodT thead').innerHTML='<tr><th style="width:30px">#</th><th style="min-width:180px">상품명</th><th>광고비</th><th>전환매출(14일)</th><th>광고수익률</th><th>주문수(14일)</th><th>광고비 비중</th><th>매출액 비중</th><th>순위변동</th></tr>';
+  const totalSpend=data.reduce((s,d)=>s+Number(d.spend),0);
+  const totalRev=data.reduce((s,d)=>s+Number(d.rev),0);
   document.querySelector('#prodT tbody').innerHTML=data.map((d,i)=>{
     const spend=Number(d.spend),rev=Number(d.rev),orders=Number(d.orders);
     const roas=spend>0?rev/spend*100:0;
+    const spendPct=totalSpend>0?(spend/totalSpend*100).toFixed(1):'0.0';
+    const revPct=totalRev>0?(rev/totalRev*100).toFixed(1):'0.0';
     const pname=d.product||'(미분류)';
-    return`<tr><td style="color:var(--text3)">${i+1}</td><td style="max-width:280px;white-space:normal;word-break:break-all">${pname}</td><td>${fW(spend)}</td><td style="color:var(--green)">${fW(rev)}</td><td><span class="bdg ${rC(roas,t)}">${C(Math.round(roas))}%</span></td><td>${fN(orders)}건</td><td>${rBdg(pname,i+1,pm)}</td></tr>`;
+    return`<tr><td style="color:var(--text3)">${i+1}</td><td style="max-width:280px;white-space:normal;word-break:break-all">${pname}</td><td>${fW(spend)}</td><td style="color:var(--green)">${fW(rev)}</td><td><span class="bdg ${rC(roas,t)}">${C(Math.round(roas))}%</span></td><td>${fN(orders)}건</td><td>${spendPct}%</td><td>${revPct}%</td><td>${rBdg(pname,i+1,pm)}</td></tr>`;
   }).join('');
   
   // 이탈 제품
@@ -2717,7 +2721,7 @@ async function renderCampPage(){
   if(mixEl)mixEl.innerHTML=`MIX 목표 광고수익률: <b style="color:var(--accent)">${C(Math.round(mixTarget))}%</b> <span style="font-size:10px;color:var(--text3)">(캠페인별 목표의 광고비 가중평균)</span>`;
   const selName=slideCampName;
   document.querySelector('#campTbl thead').innerHTML=`<tr><th>캠페인명</th><th>노출수</th><th>클릭수</th><th>클릭률</th><th>클릭당비용</th><th>전환율</th><th>집행광고비</th><th>광고전환매출</th><th>광고수익률<br><span style="font-size:9px;color:var(--text3)">(${cmpL} 대비)</span></th><th>수익률 목표</th><th style="border-left:2px solid var(--border)">광고비 비중</th><th>매출액 비중</th></tr>`;
-  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()"><input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--border);border-radius:4px;background:var(--surf2);color:var(--text);font-size:11px;text-align:center;font-family:'DM Mono',monospace" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value));renderCampPage()"/>%</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
+  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()"><input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--accent3);border-radius:4px;background:rgba(124,106,247,.1);color:var(--accent3);font-size:11px;text-align:center;font-family:'DM Mono',monospace;font-weight:700" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value));renderCampPage()"/>%</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
   await renderCampIns(tblData,globalT);
   if(slideCampName)openCampDetail(slideCampName);
 }
