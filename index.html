@@ -2503,7 +2503,7 @@ async function renderCpc(){
 function renderCpcTrendRpc(dailyData){
   if(!dailyData||!dailyData.length)return;
   const byK={a:{},m:{},all:{}};
-  dailyData.forEach(r=>{const d=r.d;if(!d||d.length<8)return;const dk=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;const key=cpcGr==='주별'?wkS(d):dk;const ct=r.camp_type;const spend=Number(r.spend)||0,clicks=Number(r.clicks)||0;if(ct==='auto'){if(!byK.a[key])byK.a[key]={spend:0,clicks:0};byK.a[key].spend+=spend;byK.a[key].clicks+=clicks;}else{if(!byK.m[key])byK.m[key]={spend:0,clicks:0};byK.m[key].spend+=spend;byK.m[key].clicks+=clicks;}if(!byK.all[key])byK.all[key]={spend:0,clicks:0};byK.all[key].spend+=spend;byK.all[key].clicks+=clicks;});
+  dailyData.forEach(r=>{const d=r.date_str||r.d;if(!d||d.length<8)return;const dk=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;const key=cpcGr==='주별'?wkS(d):dk;const ct=r.camp_type;const spend=Number(r.spend)||0,clicks=Number(r.clicks)||0;if(ct==='auto'){if(!byK.a[key])byK.a[key]={spend:0,clicks:0};byK.a[key].spend+=spend;byK.a[key].clicks+=clicks;}else{if(!byK.m[key])byK.m[key]={spend:0,clicks:0};byK.m[key].spend+=spend;byK.m[key].clicks+=clicks;}if(!byK.all[key])byK.all[key]={spend:0,clicks:0};byK.all[key].spend+=spend;byK.all[key].clicks+=clicks;});
   const allK=[...new Set([...Object.keys(byK.a),...Object.keys(byK.m),...Object.keys(byK.all)])].sort();
   const labels=allK.map(k=>cpcGr==='주별'?k.slice(5)+' 주':k.slice(5));
   const aCpc=allK.map(k=>byK.a[k]?.clicks>0?byK.a[k].spend/byK.a[k].clicks:null);
@@ -2516,7 +2516,7 @@ function renderCpcTrendRpc(dailyData){
 function renderRoasTrendRpc(dailyData){
   if(!dailyData||!dailyData.length)return;
   const byK={a:{},m:{},all:{}};
-  dailyData.forEach(r=>{const d=r.d;if(!d||d.length<8)return;const dk=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;const key=roasTrendGr==='주별'?wkS(d):dk;const ct=r.camp_type;const spend=Number(r.spend)||0,rev=Number(r.rev)||0;if(ct==='auto'){if(!byK.a[key])byK.a[key]={spend:0,rev:0};byK.a[key].spend+=spend;byK.a[key].rev+=rev;}else{if(!byK.m[key])byK.m[key]={spend:0,rev:0};byK.m[key].spend+=spend;byK.m[key].rev+=rev;}if(!byK.all[key])byK.all[key]={spend:0,rev:0};byK.all[key].spend+=spend;byK.all[key].rev+=rev;});
+  dailyData.forEach(r=>{const d=r.date_str||r.d;if(!d||d.length<8)return;const dk=`${d.slice(0,4)}-${d.slice(4,6)}-${d.slice(6,8)}`;const key=roasTrendGr==='주별'?wkS(d):dk;const ct=r.camp_type;const spend=Number(r.spend)||0,rev=Number(r.rev)||0;if(ct==='auto'){if(!byK.a[key])byK.a[key]={spend:0,rev:0};byK.a[key].spend+=spend;byK.a[key].rev+=rev;}else{if(!byK.m[key])byK.m[key]={spend:0,rev:0};byK.m[key].spend+=spend;byK.m[key].rev+=rev;}if(!byK.all[key])byK.all[key]={spend:0,rev:0};byK.all[key].spend+=spend;byK.all[key].rev+=rev;});
   const allK=[...new Set([...Object.keys(byK.a),...Object.keys(byK.m),...Object.keys(byK.all)])].sort();
   const labels=allK.map(k=>roasTrendGr==='주별'?k.slice(5)+' 주':k.slice(5));
   const aRoas=allK.map(k=>byK.a[k]?.spend>0?byK.a[k].rev/byK.a[k].spend*100:null);
