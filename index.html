@@ -951,7 +951,8 @@ async function loadUserList(){
   sel.innerHTML='<option value="">👤 내 데이터</option>';
   users.forEach(u=>{
     if(u.user_id===ADMIN_UID)return; // 본인 제외
-    const label=u.email+(u.is_active?'':' (만료)');
+    const nick=u.nickname?`${u.nickname} (${u.email})`:u.email;
+    const label=nick+(u.is_active?'':' ❌만료');
     sel.innerHTML+=`<option value="${u.user_id}">${label}</option>`;
   });
 }
