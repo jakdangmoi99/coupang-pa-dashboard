@@ -1066,10 +1066,10 @@ async function doSetupPassword(){
 // DB에 엑셀 데이터 저장
 async function saveToDB(month,fileName,rows){
   // 같은 월 데이터 통째로 삭제 후 새로 저장 (중복 방지)
-  const{error:delErr}=await sb.from('pa_data').delete().eq('file_month',month);
+  const uid=currentUser?.id||null;
+  const{error:delErr}=await sb.from('pa_data').delete().eq('file_month',month).eq('user_id',uid);
   if(delErr)console.error('DB 삭제 오류:',delErr);
 
-  const uid=currentUser?.id||null;
   const mapped=rows.map(r=>({
     date_str:String(r['날짜']||''),
     campaign:r['캠페인명']||'',
@@ -1207,9 +1207,9 @@ function dbToAF(data){
 
 // DB에 히스토리 저장
 async function saveHistDB(page,arr){
-  await sb.from('pa_history').delete().eq('page',page);
+  const uid=currentUser?.id||null;
+  await sb.from('pa_history').delete().eq('page',page).eq('user_id',uid);
   if(arr.length){
-    const uid=currentUser?.id||null;
     const mapped=arr.map(h=>({page,date:h.date,type:h.type,description:h.desc,user_id:uid}));
     await sb.from('pa_history').insert(mapped);
   }
