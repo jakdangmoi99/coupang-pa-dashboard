@@ -251,6 +251,31 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     </label>
     <button class="login-btn" id="loginBtn" onclick="doLogin()">로그인</button>
     <div class="login-err" id="loginErr"></div>
+    <div style="margin-top:12px;text-align:center">
+      <button onclick="showForgotPw()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:'Pretendard',sans-serif;text-decoration:underline;transition:color .2s" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">비밀번호를 잊으셨나요?</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ FORGOT PASSWORD OVERLAY ══════════ -->
+<div class="login-overlay" id="forgotPwOverlay" style="display:none">
+  <div class="login-box">
+    <div class="login-theme">
+      <button class="theme-btn" onclick="toggleThemeLogin()">🌙</button>
+    </div>
+    <div class="logo">⚡</div>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;letter-spacing:.5px">BY Seller HQ</p>
+    <h2>비밀번호 재설정</h2>
+    <p class="login-sub" style="margin-bottom:24px">가입하신 이메일을 입력하면 재설정 링크를 보내드립니다</p>
+    <input class="login-field" type="email" id="forgotEmail" placeholder="이메일" autocomplete="email"/>
+    <button class="login-btn" id="forgotBtn" onclick="doForgotPw()">재설정 메일 보내기</button>
+    <div class="login-err" id="forgotErr"></div>
+    <div id="forgotSuccess" style="display:none;margin-top:12px;padding:10px 14px;background:rgba(0,224,154,.08);border:1px solid rgba(0,224,154,.25);border-radius:8px;font-size:12px;color:var(--green);text-align:center">
+      ✅ 재설정 메일이 발송되었습니다. 이메일을 확인해주세요.
+    </div>
+    <div style="margin-top:12px;text-align:center">
+      <button onclick="hideForgotPw()" style="background:none;border:none;color:var(--text3);font-size:12px;cursor:pointer;font-family:'Pretendard',sans-serif;text-decoration:underline;transition:color .2s" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">← 로그인으로 돌아가기</button>
+    </div>
   </div>
 </div>
 
@@ -761,8 +786,42 @@ let currentSub=null;
 function toggleThemeLogin(){
   const h=document.documentElement,dk=h.getAttribute('data-theme')==='dark';
   h.setAttribute('data-theme',dk?'light':'dark');
-  document.querySelector('.login-theme .theme-btn').textContent=dk?'☀️':'🌙';
+  // 모든 테마 버튼 업데이트
+  document.querySelectorAll('.login-theme .theme-btn').forEach(b=>{b.textContent=dk?'☀️':'🌙';});
 }
+
+// ════ 비밀번호 찾기 ════
+function showForgotPw(){
+  document.getElementById('loginOverlay').style.display='none';
+  document.getElementById('forgotPwOverlay').style.display='flex';
+  document.getElementById('forgotErr').textContent='';
+  document.getElementById('forgotSuccess').style.display='none';
+  // 로그인 이메일이 있으면 자동 채우기
+  const loginEmail=document.getElementById('loginEmail').value.trim();
+  if(loginEmail)document.getElementById('forgotEmail').value=loginEmail;
+  document.getElementById('forgotEmail').focus();
+}
+function hideForgotPw(){
+  document.getElementById('forgotPwOverlay').style.display='none';
+  document.getElementById('loginOverlay').style.display='flex';
+}
+async function doForgotPw(){
+  const email=document.getElementById('forgotEmail').value.trim();
+  const errEl=document.getElementById('forgotErr');
+  const btn=document.getElementById('forgotBtn');
+  const successEl=document.getElementById('forgotSuccess');
+  errEl.textContent='';successEl.style.display='none';
+  if(!email){errEl.textContent='이메일을 입력해주세요';return;}
+  btn.disabled=true;btn.textContent='발송 중...';
+  try{
+    const{error}=await sb.auth.resetPasswordForEmail(email,{redirectTo:window.location.origin+'/'});
+    if(error){errEl.textContent=error.message;btn.disabled=false;btn.textContent='재설정 메일 보내기';return;}
+    successEl.style.display='block';
+    btn.textContent='발송 완료';
+    setTimeout(()=>{btn.disabled=false;btn.textContent='재설정 메일 보내기';},3000);
+  }catch(e){errEl.textContent='오류가 발생했습니다';console.error(e);btn.disabled=false;btn.textContent='재설정 메일 보내기';}
+}
+document.getElementById('forgotEmail').addEventListener('keydown',e=>{if(e.key==='Enter')doForgotPw();});
 
 async function doLogin(){
   const email=document.getElementById('loginEmail').value.trim();
