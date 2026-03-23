@@ -1955,12 +1955,12 @@ async function populateCpcSel(){
   const r30camps=await loadCampAgg(recent30);
   const activeCamps=new Set((r30camps||[]).filter(c=>Number(c.spend)>0).map(c=>c.campaign));
   const campNames=[...activeCamps].sort();
-  // 광고유형 기반으로 캠페인 분류 (DB에서 로드 후 ad_type으로 판별)
-  const rows2=getCpcRows();
-  const campAdType={};
-  rows2.forEach(r=>{const cn=(r['캠페인명']||'').trim();const at=(r['광고유형']||'').trim();if(cn&&at&&!campAdType[cn])campAdType[cn]=at;});
-  cpcManList=campNames.filter(c=>(campAdType[c]||'').includes('수동'));
-  cpcAutoList=campNames.filter(c=>!cpcManList.includes(c));
+  // 광고유형 기반으로 캠페인 분류 (DB에서 직접 조회)
+  const typeMap=await rpc('get_camp_type_map')||[];
+  const campTypeMap={};
+  typeMap.forEach(r=>{campTypeMap[r.campaign]=r.camp_type;});
+  cpcManList=campNames.filter(c=>campTypeMap[c]==='man');
+  cpcAutoList=campNames.filter(c=>campTypeMap[c]!=='man');
   cpcAutoSel=[...cpcAutoList];
   cpcManSel=[...cpcManList];
   renderCampBtns();
@@ -2126,7 +2126,7 @@ function renderCpcChartIns(aAgg,mAgg,aPrev,mPrev,rows,cur){
   const agg={a:{s:0,c:0,r:0},m:{s:0,c:0,r:0}};
   fr.forEach(r=>{
     const camp=(r['캠페인명']||'').trim();
-    const t=(r['광고유형']||'').includes('수동')?'m':'a';
+    const at=(r['광고유형']||'').trim();const t=(at?at.includes('수동'):(r['캠페인명']||'').includes('수동'))?'m':'a';
     agg[t].s+=N(r['광고비']);agg[t].c+=N(r['클릭수']);agg[t].r+=N(r['총 전환매출액(14일)']);
   });
   const aC={cpc:agg.a.c>0?agg.a.s/agg.a.c:0,roas:agg.a.s>0?agg.a.r/agg.a.s*100:0};
@@ -2136,7 +2136,7 @@ function renderCpcChartIns(aAgg,mAgg,aPrev,mPrev,rows,cur){
   const prevDates=getPer(rows,cpcP,'cpc').prev;
   const pAgg={a:{s:0,c:0,r:0},m:{s:0,c:0,r:0}};
   rows.filter(r=>prevDates.includes(String(r['날짜']||''))).forEach(r=>{
-    const t=(r['광고유형']||'').includes('수동')?'m':'a';
+    const at=(r['광고유형']||'').trim();const t=(at?at.includes('수동'):(r['캠페인명']||'').includes('수동'))?'m':'a';
     pAgg[t].s+=N(r['광고비']);pAgg[t].c+=N(r['클릭수']);pAgg[t].r+=N(r['총 전환매출액(14일)']);
   });
   const aP={cpc:pAgg.a.c>0?pAgg.a.s/pAgg.a.c:0,roas:pAgg.a.s>0?pAgg.a.r/pAgg.a.s*100:0};
