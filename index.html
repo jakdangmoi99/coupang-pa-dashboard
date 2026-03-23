@@ -254,6 +254,23 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
   </div>
 </div>
 
+<!-- ══════════ PASSWORD SETUP OVERLAY ══════════ -->
+<div class="login-overlay" id="pwSetupOverlay" style="display:none">
+  <div class="login-box">
+    <div class="login-theme">
+      <button class="theme-btn" onclick="toggleThemeLogin()">🌙</button>
+    </div>
+    <div class="logo">⚡</div>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;letter-spacing:.5px">BY Seller HQ</p>
+    <h2>비밀번호 설정</h2>
+    <p class="login-sub" style="margin-bottom:24px">사용하실 비밀번호를 입력해주세요</p>
+    <input class="login-field" type="password" id="setupPw1" placeholder="비밀번호 (6자 이상)" autocomplete="new-password"/>
+    <input class="login-field" type="password" id="setupPw2" placeholder="비밀번호 확인" autocomplete="new-password"/>
+    <button class="login-btn" id="setupBtn" onclick="doSetupPassword()">비밀번호 설정 완료</button>
+    <div class="login-err" id="setupErr"></div>
+  </div>
+</div>
+
 <!-- ══════════ EXPIRED OVERLAY ══════════ -->
 <div class="expired-overlay" id="expiredOverlay">
   <div class="expired-box">
@@ -839,9 +856,56 @@ async function onAuthSuccess(){
 // Enter 키로 로그인
 document.getElementById('loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
 document.getElementById('loginEmail').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginPw').focus();});
+document.getElementById('setupPw2').addEventListener('keydown',e=>{if(e.key==='Enter')doSetupPassword();});
 
-// 페이지 로드 시 세션 복원 시도
+// ════ 비밀번호 설정 (초대 링크용) ════
+let isInviteFlow=false;
+
+async function doSetupPassword(){
+  const pw1=document.getElementById('setupPw1').value;
+  const pw2=document.getElementById('setupPw2').value;
+  const errEl=document.getElementById('setupErr');
+  const btn=document.getElementById('setupBtn');
+  errEl.textContent='';
+  if(!pw1||!pw2){errEl.textContent='비밀번호를 입력해주세요';return;}
+  if(pw1.length<6){errEl.textContent='비밀번호는 6자 이상이어야 합니다';return;}
+  if(pw1!==pw2){errEl.textContent='비밀번호가 일치하지 않습니다';return;}
+  btn.disabled=true;btn.textContent='설정 중...';
+  try{
+    const{data,error}=await sb.auth.updateUser({password:pw1});
+    if(error){errEl.textContent=error.message;btn.disabled=false;btn.textContent='비밀번호 설정 완료';return;}
+    // 성공 → 대시보드로
+    isInviteFlow=false;
+    document.getElementById('pwSetupOverlay').style.display='none';
+    currentUser=data.user;
+    await onAuthSuccess();
+  }catch(e){errEl.textContent='오류가 발생했습니다';console.error(e);}
+  btn.disabled=false;btn.textContent='비밀번호 설정 완료';
+}
+
+// 페이지 로드 시 세션 복원 + 초대 링크 감지
 (async function checkSession(){
+  // URL 해시에서 초대/복구 토큰 감지
+  const hash=window.location.hash;
+  const isInvite=hash.includes('type=invite')||hash.includes('type=recovery')||hash.includes('type=magiclink');
+
+  // Supabase가 해시 토큰을 자동으로 처리하도록 잠시 대기
+  if(isInvite){
+    // onAuthStateChange로 세션 잡기
+    sb.auth.onAuthStateChange(async(event,session)=>{
+      if(session&&session.user&&(event==='SIGNED_IN'||event==='TOKEN_REFRESHED')){
+        currentUser=session.user;
+        isInviteFlow=true;
+        document.getElementById('loginOverlay').style.display='none';
+        document.getElementById('pwSetupOverlay').style.display='flex';
+        // URL 해시 정리
+        history.replaceState(null,'',window.location.pathname);
+      }
+    });
+    return;
+  }
+
+  // 일반 세션 복원
   const{data:{session}}=await sb.auth.getSession();
   if(session&&session.user){
     currentUser=session.user;
