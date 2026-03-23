@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
-<title>쿠팡 PA(키워드 광고) 성과 대시보드 v7</title>
+<title>쿠팡 PA 브리핑 센터 | Seller HQ</title>
 <link href="https://fonts.googleapis.com/css2?family=Pretendard:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
@@ -194,17 +194,85 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 .cbtn.on{color:#fff;}
 .cbtn.on.auto-c{background:#3d8ef8;border-color:#3d8ef8;}
 .cbtn.on.man-c{background:#00e09a;border-color:#00e09a;}
+/* LOGIN OVERLAY */
+.login-overlay{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;background:var(--bg);transition:background .3s;}
+[data-theme="dark"] .login-overlay::before{content:"";position:absolute;inset:0;background:radial-gradient(ellipse 80% 50% at 50% 30%,rgba(61,142,248,.10) 0%,transparent 60%),radial-gradient(ellipse 60% 40% at 80% 80%,rgba(0,212,180,.06) 0%,transparent 50%);pointer-events:none;}
+.login-box{position:relative;background:var(--surf);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:380px;max-width:92vw;box-shadow:0 8px 40px rgba(0,0,0,.25);text-align:center;}
+[data-theme="light"] .login-box{box-shadow:0 8px 40px rgba(0,0,0,.08);}
+.login-box .logo{margin:0 auto 16px;width:52px;height:52px;font-size:24px;border-radius:13px;}
+.login-box h2{font-size:20px;font-weight:800;margin-bottom:4px;color:var(--text);}
+.login-box .login-sub{font-size:13px;color:var(--text3);margin-bottom:24px;}
+.login-field{width:100%;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surf2);color:var(--text);font-size:14px;font-family:"Pretendard",sans-serif;outline:none;margin-bottom:12px;transition:border-color .2s;}
+.login-field:focus{border-color:var(--accent);}
+.login-field::placeholder{color:var(--text3);}
+.login-btn{width:100%;padding:12px;border:none;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:15px;font-weight:700;cursor:pointer;transition:transform .2s,opacity .2s;font-family:"Pretendard",sans-serif;}
+.login-btn:hover{transform:translateY(-1px);}
+.login-btn:disabled{opacity:.5;cursor:not-allowed;transform:none;}
+.login-err{color:var(--red);font-size:12px;font-weight:600;margin-top:8px;min-height:18px;}
+.login-theme{position:absolute;top:14px;right:14px;}
+/* EXPIRED OVERLAY */
+.expired-overlay{position:fixed;inset:0;z-index:9998;display:none;align-items:center;justify-content:center;background:rgba(7,17,31,.92);backdrop-filter:blur(6px);}
+[data-theme="light"] .expired-overlay{background:rgba(240,244,250,.92);}
+.expired-box{background:var(--surf);border:1px solid var(--border);border-radius:16px;padding:40px;text-align:center;max-width:420px;box-shadow:0 8px 40px rgba(0,0,0,.3);}
+.expired-box .exp-ico{font-size:48px;margin-bottom:14px;}
+.expired-box h2{font-size:20px;font-weight:800;color:var(--text);margin-bottom:8px;}
+.expired-box p{font-size:14px;color:var(--text2);line-height:1.6;margin-bottom:20px;}
+.expired-box .btn{font-family:"Pretendard",sans-serif;}
+/* SIDEBAR USER & GUIDE */
+.sidebar-user{padding:10px 14px;font-size:12px;color:var(--text2);display:flex;flex-direction:column;gap:6px;}
+.sidebar-user .user-email{font-size:11px;color:var(--text3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px;}
+.sidebar-user .sub-badge{font-size:10px;color:var(--accent2);font-weight:600;}
+.sidebar-user .logout-btn{padding:6px 0;border:none;background:transparent;color:var(--text3);font-size:12px;cursor:pointer;text-align:left;font-family:"Pretendard",sans-serif;transition:color .2s;}
+.sidebar-user .logout-btn:hover{color:var(--red);}
+.sidebar-guide{padding:0 14px 10px;display:flex;flex-direction:column;gap:4px;}
+.guide-link{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:7px;font-size:12px;font-weight:600;color:var(--text2);text-decoration:none;border:1px solid var(--border);transition:all .2s;}
+.guide-link:hover{border-color:var(--accent);color:var(--accent);background:rgba(61,142,248,.04);}
+/* SUBSCRIPTION BADGE (header) */
+.sub-date-badge{background:rgba(0,212,180,.08);border:1px solid rgba(0,212,180,.25);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--accent2);font-weight:600;}
+.sub-date-badge.warn{background:rgba(255,68,102,.08);border-color:rgba(255,68,102,.25);color:var(--red);}
 </style>
 </head>
 <body>
-<div class="app">
+
+<!-- ══════════ LOGIN OVERLAY ══════════ -->
+<div class="login-overlay" id="loginOverlay">
+  <div class="login-box">
+    <div class="login-theme">
+      <button class="theme-btn" onclick="toggleThemeLogin()">🌙</button>
+    </div>
+    <div class="logo">⚡</div>
+    <p style="font-size:11px;color:var(--text3);margin-bottom:4px;font-weight:600;letter-spacing:.5px">BY Seller HQ</p>
+    <h2>쿠팡 PA 브리핑 센터</h2>
+    <p class="login-sub" style="margin-bottom:24px">이메일과 비밀번호를 입력해주세요</p>
+    <input class="login-field" type="email" id="loginEmail" placeholder="이메일" autocomplete="email"/>
+    <input class="login-field" type="password" id="loginPw" placeholder="비밀번호" autocomplete="current-password"/>
+    <label style="display:flex;align-items:center;gap:6px;margin-bottom:16px;cursor:pointer;font-size:12px;color:var(--text2);user-select:none;justify-content:flex-start">
+      <input type="checkbox" id="rememberEmail" style="accent-color:var(--accent);width:15px;height:15px;cursor:pointer"/> 이메일 기억하기
+    </label>
+    <button class="login-btn" id="loginBtn" onclick="doLogin()">로그인</button>
+    <div class="login-err" id="loginErr"></div>
+  </div>
+</div>
+
+<!-- ══════════ EXPIRED OVERLAY ══════════ -->
+<div class="expired-overlay" id="expiredOverlay">
+  <div class="expired-box">
+    <div class="exp-ico">🔒</div>
+    <h2>구독이 만료되었습니다</h2>
+    <p id="expiredMsg">서비스 이용 기간이 종료되었습니다.<br>계속 이용하시려면 관리자에게 문의해주세요.</p>
+    <button class="btn btn-ol" onclick="doLogout()" style="margin-right:8px">로그아웃</button>
+    <a href="mailto:project@jakdangmoi.kr" class="btn btn-pr" style="text-decoration:none;display:inline-block">문의하기</a>
+  </div>
+</div>
+
+<div class="app" id="appContainer" style="display:none">
 
 <!-- ══════════ SIDEBAR ══════════ -->
 <aside class="sidebar">
   <div class="sidebar-logo">
     <div class="logo" id="logoEl">⚡</div>
     <div>
-      <h2>쿠팡 PA 광고</h2>
+      <h2>쿠팡 PA 브리핑 센터</h2>
       <p>성과 분석 대시보드</p>
     </div>
   </div>
@@ -215,6 +283,15 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     <button class="nav-item" onclick="switchPage('report',this)"><span class="nav-ico">📝</span>히스토리</button>
   </nav>
   <div class="sidebar-bottom">
+    <div class="sidebar-guide">
+      <a href="#" id="guideLink" class="guide-link" target="_blank" rel="noopener">📖 사용법 안내</a>
+      <a href="#" id="updateLink" class="guide-link" target="_blank" rel="noopener">🔔 업데이트 안내</a>
+    </div>
+    <div class="sidebar-user" id="sidebarUser" style="display:none">
+      <div class="user-email" id="sideUserEmail">-</div>
+      <div class="sub-badge" id="sideSubBadge"></div>
+      <button class="logout-btn" onclick="doLogout()">🚪 로그아웃</button>
+    </div>
   </div>
 </aside>
 
@@ -229,6 +306,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     </div>
   </div>
   <div class="hd-right">
+    <div class="sub-date-badge" id="subBadge" style="display:none">서비스 기간: <b id="subExpDate">-</b></div>
     <div class="last-date" id="ldBadge" style="display:none">마지막: <b id="ldVal">-</b></div>
     <button class="theme-btn" id="tBtn" onclick="toggleTheme()">🌙</button>
     <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none"/>
@@ -647,12 +725,139 @@ const SUPABASE_URL='https://jzzwrlvtospuwntnafhn.supabase.co';
 const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6endybHZ0b3NwdXdudG5hZmhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MTgwMzQsImV4cCI6MjA4ODE5NDAzNH0.9txsHj4bm5iB4L4LfKgU0pRGZK0yJsHhNyFBh7_HMsw';
 const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 
+// ════ 설정 ════
+const GUIDE_PDF_URL='https://drive.google.com/drive/folders/1tbxyUvxQKKWZrO1EZ5_7xTFGGO_KHugI?usp=sharing';
+const UPDATE_PDF_URL='https://drive.google.com/drive/folders/1uuc6L2dZkQ4d0G5HpUd4IwHmdpYnrNvZ?usp=sharing';
+document.getElementById('guideLink').href=GUIDE_PDF_URL;
+document.getElementById('updateLink').href=UPDATE_PDF_URL;
+
+// 이메일 기억하기
+(function loadRememberedEmail(){
+  const saved=localStorage.getItem('pa_remember_email');
+  if(saved){document.getElementById('loginEmail').value=saved;document.getElementById('rememberEmail').checked=true;}
+})();
+
+// ════ 인증 관리 ════
+let currentUser=null;
+let currentSub=null;
+
+function toggleThemeLogin(){
+  const h=document.documentElement,dk=h.getAttribute('data-theme')==='dark';
+  h.setAttribute('data-theme',dk?'light':'dark');
+  document.querySelector('.login-theme .theme-btn').textContent=dk?'☀️':'🌙';
+}
+
+async function doLogin(){
+  const email=document.getElementById('loginEmail').value.trim();
+  const pw=document.getElementById('loginPw').value;
+  const errEl=document.getElementById('loginErr');
+  const btn=document.getElementById('loginBtn');
+  errEl.textContent='';
+  if(!email||!pw){errEl.textContent='이메일과 비밀번호를 입력해주세요';return;}
+  btn.disabled=true;btn.textContent='로그인 중...';
+  try{
+    const{data,error}=await sb.auth.signInWithPassword({email,password:pw});
+    if(error){
+      const msg=error.message.includes('Invalid login')?'이메일 또는 비밀번호가 올바르지 않습니다':error.message;
+      errEl.textContent=msg;btn.disabled=false;btn.textContent='로그인';return;
+    }
+    currentUser=data.user;
+    // 이메일 기억하기
+    if(document.getElementById('rememberEmail').checked){localStorage.setItem('pa_remember_email',email);}
+    else{localStorage.removeItem('pa_remember_email');}
+    await onAuthSuccess();
+  }catch(e){errEl.textContent='로그인 중 오류가 발생했습니다';console.error(e);}
+  btn.disabled=false;btn.textContent='로그인';
+}
+
+async function doLogout(){
+  await sb.auth.signOut();
+  currentUser=null;currentSub=null;
+  document.getElementById('loginOverlay').style.display='flex';
+  document.getElementById('appContainer').style.display='none';
+  document.getElementById('expiredOverlay').style.display='none';
+  document.getElementById('sidebarUser').style.display='none';
+  document.getElementById('subBadge').style.display='none';
+  document.getElementById('loginEmail').value='';
+  document.getElementById('loginPw').value='';
+  document.getElementById('loginErr').textContent='';
+}
+
+async function checkSubscription(){
+  const raw=await rpc('get_my_subscription');
+  const sub=Array.isArray(raw)?raw[0]:raw;
+  currentSub=sub;
+  console.log('🔑 구독 정보:',sub);
+  if(!sub||!sub.is_active){
+    // 만료
+    document.getElementById('expiredOverlay').style.display='flex';
+    document.getElementById('appContainer').style.display='none';
+    if(sub&&sub.expires_at){
+      const d=new Date(sub.expires_at);
+      document.getElementById('expiredMsg').innerHTML=
+        `서비스 이용 기간이 <b>${d.getFullYear()}.${String(d.getMonth()+1).padStart(2,'0')}.${String(d.getDate()).padStart(2,'0')}</b>에 종료되었습니다.<br>계속 이용하시려면 관리자에게 문의해주세요.`;
+    }
+    return false;
+  }
+  // 구독 활성 — 배지 표시
+  const exp=new Date(sub.expires_at);
+  const expStr=`${exp.getFullYear()}.${String(exp.getMonth()+1).padStart(2,'0')}.${String(exp.getDate()).padStart(2,'0')}`;
+  const daysLeft=Math.ceil((exp-new Date())/(86400000));
+  const badge=document.getElementById('subBadge');
+  badge.style.display='';
+  document.getElementById('subExpDate').textContent='~'+expStr;
+  if(daysLeft<=7)badge.classList.add('warn');
+  else badge.classList.remove('warn');
+  // 사이드바 배지
+  const sideSub=document.getElementById('sideSubBadge');
+  if(sideSub){
+    sideSub.textContent=daysLeft<=7?`⚠️ ${daysLeft}일 남음 (~${expStr})`:`~${expStr}`;
+    if(daysLeft<=7)sideSub.style.color='var(--red)';
+  }
+  return true;
+}
+
+async function onAuthSuccess(){
+  // UI 전환
+  document.getElementById('loginOverlay').style.display='none';
+  document.getElementById('expiredOverlay').style.display='none';
+  // 사이드바 유저 정보
+  document.getElementById('sidebarUser').style.display='flex';
+  document.getElementById('sideUserEmail').textContent=currentUser.email;
+  // 테마 동기화
+  const dk=document.documentElement.getAttribute('data-theme')==='dark';
+  document.getElementById('tBtn').textContent=dk?'🌙':'☀️';
+  // 구독 체크
+  const active=await checkSubscription();
+  if(!active)return;
+  // 대시보드 표시
+  document.getElementById('appContainer').style.display='flex';
+  // 데이터 로드
+  await initFromDB();
+}
+
+// Enter 키로 로그인
+document.getElementById('loginPw').addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+document.getElementById('loginEmail').addEventListener('keydown',e=>{if(e.key==='Enter')document.getElementById('loginPw').focus();});
+
+// 페이지 로드 시 세션 복원 시도
+(async function checkSession(){
+  const{data:{session}}=await sb.auth.getSession();
+  if(session&&session.user){
+    currentUser=session.user;
+    await onAuthSuccess();
+  } else {
+    document.getElementById('loginOverlay').style.display='flex';
+  }
+})();
+
 // DB에 엑셀 데이터 저장
 async function saveToDB(month,fileName,rows){
   // 같은 월 데이터 통째로 삭제 후 새로 저장 (중복 방지)
   const{error:delErr}=await sb.from('pa_data').delete().eq('file_month',month);
   if(delErr)console.error('DB 삭제 오류:',delErr);
 
+  const uid=currentUser?.id||null;
   const mapped=rows.map(r=>({
     date_str:String(r['날짜']||''),
     campaign:r['캠페인명']||'',
@@ -665,7 +870,8 @@ async function saveToDB(month,fileName,rows){
     spend:parseFloat(String(r['광고비']||0).replace(/[,%]/g,''))||0,
     orders_14d:parseFloat(String(r['총 주문수(14일)']||0).replace(/[,%]/g,''))||0,
     revenue_14d:parseFloat(String(r['총 전환매출액(14일)']||0).replace(/[,%]/g,''))||0,
-    file_month:month
+    file_month:month,
+    user_id:uid
   }));
 
   // 진행상황 표시
@@ -787,7 +993,8 @@ function dbToAF(data){
 async function saveHistDB(page,arr){
   await sb.from('pa_history').delete().eq('page',page);
   if(arr.length){
-    const mapped=arr.map(h=>({page,date:h.date,type:h.type,description:h.desc}));
+    const uid=currentUser?.id||null;
+    const mapped=arr.map(h=>({page,date:h.date,type:h.type,description:h.desc,user_id:uid}));
     await sb.from('pa_history').insert(mapped);
   }
 }
@@ -2333,7 +2540,7 @@ const cpcHiDate2El=document.getElementById('cpcHiDate2');if(cpcHiDate2El)cpcHiDa
 renderH('main');renderH('cpc');
 
 // 페이지 로드 시 Supabase에서 데이터 자동 로드
-(async function initFromDB(){
+async function initFromDB(){
   try{
     const data=await loadFromDB();
     if(data.length){
@@ -2347,7 +2554,7 @@ renderH('main');renderH('cpc');
     if(hist.main.length){mainHist=hist.main;localStorage.setItem('pa_hist',JSON.stringify(mainHist));renderH('main');}
     if(hist.cpc.length){cpcHist=hist.cpc;localStorage.setItem('pa_cpc_hist',JSON.stringify(cpcHist));renderH('cpc');}
   }catch(e){console.error('DB 초기 로드 실패:',e);}
-})();
+}
 </script>
 </body>
 </html>
