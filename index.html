@@ -225,6 +225,14 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 .sidebar-user .logout-btn{padding:6px 0;border:none;background:transparent;color:var(--text3);font-size:12px;cursor:pointer;text-align:left;font-family:"Pretendard",sans-serif;transition:color .2s;}
 .sidebar-user .logout-btn:hover{color:var(--red);}
 .sidebar-guide{padding:0 14px 10px;display:flex;flex-direction:column;gap:4px;}
+/* ADMIN MODE */
+.admin-panel{padding:8px 14px 10px;border-top:1px solid var(--border);display:none;}
+.admin-panel label{font-size:10px;font-weight:700;color:var(--accent3);letter-spacing:.5px;display:block;margin-bottom:4px;}
+.admin-panel select{width:100%;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surf2);color:var(--text);font-size:11px;font-family:"Pretendard",sans-serif;outline:none;cursor:pointer;}
+.admin-panel select:focus{border-color:var(--accent3);}
+.admin-banner{background:linear-gradient(90deg,rgba(124,106,247,.12),rgba(61,142,248,.08));border:1px solid rgba(124,106,247,.3);border-radius:8px;padding:6px 12px;margin-bottom:12px;display:none;align-items:center;justify-content:space-between;font-size:12px;color:var(--accent3);font-weight:600;}
+.admin-banner button{background:none;border:1px solid var(--accent3);border-radius:5px;padding:3px 8px;color:var(--accent3);font-size:10px;font-weight:700;cursor:pointer;font-family:"Pretendard",sans-serif;transition:all .2s;}
+.admin-banner button:hover{background:var(--accent3);color:#fff;}
 .guide-link{display:flex;align-items:center;gap:6px;padding:7px 10px;border-radius:7px;font-size:12px;font-weight:600;color:var(--text2);text-decoration:none;border:1px solid var(--border);transition:all .2s;}
 .guide-link:hover{border-color:var(--accent);color:var(--accent);background:rgba(61,142,248,.04);}
 /* SUBSCRIPTION BADGE (header) */
@@ -325,6 +333,12 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     <button class="nav-item" onclick="switchPage('report',this)"><span class="nav-ico">📝</span>히스토리</button>
   </nav>
   <div class="sidebar-bottom">
+    <div class="admin-panel" id="adminPanel">
+      <label>👑 관리자 — 고객 전환</label>
+      <select id="adminUserSel" onchange="switchAdminView()">
+        <option value="">내 데이터</option>
+      </select>
+    </div>
     <div class="sidebar-guide">
       <a href="#" id="guideLink" class="guide-link" target="_blank" rel="noopener">📖 사용법 안내</a>
       <a href="#" id="updateLink" class="guide-link" target="_blank" rel="noopener">🔔 업데이트 안내</a>
@@ -355,6 +369,12 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     <button class="btn btn-pr" onclick="document.getElementById('fileInput').click()">📂 파일 추가</button>
   </div>
 </header>
+
+<!-- ADMIN VIEWING BANNER -->
+<div class="admin-banner" id="adminBanner">
+  <span>👑 <span id="adminViewLabel">고객 데이터 보는 중</span></span>
+  <button onclick="resetAdminView()">내 데이터로 돌아가기</button>
+</div>
 
 <!-- PAGE TABS (hidden) -->
 <div class="page-tabs">
@@ -783,6 +803,10 @@ document.getElementById('updateLink').href=UPDATE_PDF_URL;
 let currentUser=null;
 let currentSub=null;
 
+// ════ 관리자 모드 ════
+const ADMIN_UID='88c08fd5-3f06-45bc-9c6c-92d1a7a4a998';
+let adminTargetUid=null; // null이면 본인 데이터, 설정되면 해당 고객 데이터
+
 function toggleThemeLogin(){
   const h=document.documentElement,dk=h.getAttribute('data-theme')==='dark';
   h.setAttribute('data-theme',dk?'light':'dark');
@@ -848,12 +872,14 @@ async function doLogin(){
 
 async function doLogout(){
   await sb.auth.signOut();
-  currentUser=null;currentSub=null;
+  currentUser=null;currentSub=null;adminTargetUid=null;
   document.getElementById('loginOverlay').style.display='flex';
   document.getElementById('appContainer').style.display='none';
   document.getElementById('expiredOverlay').style.display='none';
   document.getElementById('sidebarUser').style.display='none';
   document.getElementById('subBadge').style.display='none';
+  document.getElementById('adminPanel').style.display='none';
+  document.getElementById('adminBanner').style.display='none';
   document.getElementById('loginEmail').value='';
   document.getElementById('loginPw').value='';
   document.getElementById('loginErr').textContent='';
@@ -903,6 +929,11 @@ async function onAuthSuccess(){
   // 테마 동기화
   const dk=document.documentElement.getAttribute('data-theme')==='dark';
   document.getElementById('tBtn').textContent=dk?'🌙':'☀️';
+  // 관리자 패널 초기화
+  if(currentUser.id===ADMIN_UID){
+    document.getElementById('adminPanel').style.display='block';
+    loadUserList();
+  }
   // 구독 체크
   const active=await checkSubscription();
   if(!active)return;
@@ -910,6 +941,44 @@ async function onAuthSuccess(){
   document.getElementById('appContainer').style.display='flex';
   // 데이터 로드
   await initFromDB();
+}
+
+// ════ 관리자: 고객 목록 & 전환 ════
+async function loadUserList(){
+  const users=await rpc('get_user_list');
+  if(!users||!users.length)return;
+  const sel=document.getElementById('adminUserSel');
+  sel.innerHTML='<option value="">👤 내 데이터</option>';
+  users.forEach(u=>{
+    if(u.user_id===ADMIN_UID)return; // 본인 제외
+    const label=u.email+(u.is_active?'':' (만료)');
+    sel.innerHTML+=`<option value="${u.user_id}">${label}</option>`;
+  });
+}
+
+async function switchAdminView(){
+  const sel=document.getElementById('adminUserSel');
+  const uid=sel.value;
+  if(!uid){resetAdminView();return;}
+  adminTargetUid=uid;
+  const label=sel.options[sel.selectedIndex].text;
+  // 배너 표시
+  document.getElementById('adminBanner').style.display='flex';
+  document.getElementById('adminViewLabel').textContent=`${label} 데이터 보는 중`;
+  // 캐시 초기화 & 데이터 재로드
+  _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
+  aF=[];
+  await initFromDB();
+}
+
+function resetAdminView(){
+  adminTargetUid=null;
+  document.getElementById('adminBanner').style.display='none';
+  document.getElementById('adminUserSel').value='';
+  // 캐시 초기화 & 내 데이터 재로드
+  _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
+  aF=[];
+  initFromDB();
 }
 
 // Enter 키로 로그인
@@ -1026,6 +1095,10 @@ async function saveToDB(month,fileName,rows){
 
 // ── RPC 호출 함수들 ──
 async function rpc(fn,params={}){
+  // 관리자 모드: 다른 고객 데이터 조회 시 p_target_uid 자동 주입
+  if(adminTargetUid && currentUser?.id===ADMIN_UID && fn!=='get_my_subscription'){
+    params={...params, p_target_uid:adminTargetUid};
+  }
   const{data,error}=await sb.rpc(fn,params);
   if(error){console.error(`RPC ${fn} 오류:`,error);return null;}
   return data;
