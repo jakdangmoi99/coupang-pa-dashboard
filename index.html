@@ -366,6 +366,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     <div class="sub-date-badge" id="subBadge" style="display:none">서비스 기간: <b id="subExpDate">-</b></div>
     <div class="last-date" id="ldBadge" style="display:none">마지막: <b id="ldVal">-</b></div>
     <button class="theme-btn" id="tBtn" onclick="toggleTheme()">🌙</button>
+    <button class="theme-btn" onclick="refreshDash()" title="대시보드 새로고침">🔄</button>
     <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none"/>
     <button class="btn btn-pr" onclick="document.getElementById('fileInput').click()">📂 파일 추가</button>
   </div>
@@ -374,7 +375,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 <!-- ADMIN VIEWING BANNER -->
 <div class="admin-banner" id="adminBanner">
   <span>👑 <span id="adminViewLabel">고객 데이터 보는 중</span></span>
-  <button onclick="resetAdminView()">내 데이터로 돌아가기</button>
+  <button onclick="if(adminTargetUid){window.close();}else{resetAdminView();}">이 탭 닫기</button>
 </div>
 
 <!-- PAGE TABS (hidden) -->
@@ -948,8 +949,21 @@ async function onAuthSuccess(){
   // 테마 동기화
   const dk=document.documentElement.getAttribute('data-theme')==='dark';
   document.getElementById('tBtn').textContent=dk?'🌙':'☀️';
-  // 관리자 패널 초기화
-  if(currentUser.id===ADMIN_UID){
+  // 관리자: view_as 파라미터 감지 (새 탭 읽기 전용)
+  const urlParams=new URLSearchParams(window.location.search);
+  const viewAs=urlParams.get('view_as');
+  if(viewAs && currentUser.id===ADMIN_UID){
+    adminTargetUid=viewAs;
+    document.getElementById('adminBanner').style.display='flex';
+    document.getElementById('adminViewLabel').textContent='고객 데이터 보는 중 (읽기 전용)';
+    // 파일 업로드 숨기기
+    const fileBtn=document.querySelector('.btn-pr');if(fileBtn&&fileBtn.textContent.includes('파일'))fileBtn.style.display='none';
+    const fileInput=document.getElementById('fileInput');if(fileInput)fileInput.disabled=true;
+    // 히스토리 추가 버튼 숨기기
+    document.querySelectorAll('.hist-form').forEach(f=>f.style.display='none');
+  }
+  // 관리자 패널 (본인 탭에서만)
+  if(currentUser.id===ADMIN_UID && !viewAs){
     document.getElementById('adminPanel').style.display='block';
     loadUserList();
   }
@@ -979,25 +993,20 @@ async function loadUserList(){
 async function switchAdminView(){
   const sel=document.getElementById('adminUserSel');
   const uid=sel.value;
-  if(!uid){resetAdminView();return;}
-  adminTargetUid=uid;
-  const label=sel.options[sel.selectedIndex].text;
-  // 배너 표시
-  document.getElementById('adminBanner').style.display='flex';
-  document.getElementById('adminViewLabel').textContent=`${label} 데이터 보는 중`;
-  // 캐시 초기화 & 데이터 재로드
-  _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
-  aF=[];
-  await initFromDB();
+  if(!uid){return;}
+  // 새 탭으로 열기 (읽기 전용)
+  window.open(window.location.origin+'/?view_as='+uid,'_blank');
+  sel.value=''; // 드롭다운 원래대로
 }
 
 function resetAdminView(){
   adminTargetUid=null;
   document.getElementById('adminBanner').style.display='none';
-  document.getElementById('adminUserSel').value='';
   // 캐시 초기화 & 내 데이터 재로드
   _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
-  aF=[];
+  aF=[];mainHist=[];cpcHist=[];
+  const mainNav=document.querySelector('.nav-item');
+  if(mainNav)switchPage('main',mainNav);
   initFromDB();
 }
 
@@ -1065,6 +1074,8 @@ async function doSetupPassword(){
 
 // DB에 엑셀 데이터 저장
 async function saveToDB(month,fileName,rows){
+  // 관리자 읽기 전용 모드에서는 저장 차단
+  if(adminTargetUid){console.warn('읽기 전용 모드 — 저장 차단');return;}
   // 같은 월 데이터 통째로 삭제 후 새로 저장 (중복 방지)
   const uid=currentUser?.id||null;
   const{error:delErr}=await sb.from('pa_data').delete().eq('file_month',month).eq('user_id',uid);
@@ -1207,20 +1218,24 @@ function dbToAF(data){
 
 // DB에 히스토리 저장
 async function saveHistDB(page,arr){
+  // 관리자 읽기 전용 모드에서는 저장 차단
+  if(adminTargetUid){console.warn('읽기 전용 모드 — 히스토리 저장 차단');return;}
   const uid=currentUser?.id||null;
-  await sb.from('pa_history').delete().eq('page',page).eq('user_id',uid);
+  // 기존 히스토리 삭제 (RPC 사용)
+  await rpc('delete_history',{p_page:page});
   if(arr.length){
     const mapped=arr.map(h=>({page,date:h.date,type:h.type,description:h.desc,user_id:uid}));
-    await sb.from('pa_history').insert(mapped);
+    // RLS 우회를 위해 RPC로 삽입
+    await rpc('insert_history',{p_rows:JSON.stringify(mapped)});
   }
 }
 
-// DB에서 히스토리 로드
+// DB에서 히스토리 로드 (RPC 기반 — 관리자 모드 지원)
 async function loadHistDB(){
-  const{data,error}=await sb.from('pa_history').select('*').order('created_at',{ascending:false});
-  if(error){console.error('히스토리 로드 오류:',error);return{main:[],cpc:[]};}
+  const data=await rpc('get_history');
+  if(!data||!data.length)return{main:[],cpc:[]};
   const main=[],cpc=[];
-  (data||[]).forEach(h=>{
+  data.forEach(h=>{
     const item={id:h.id,date:h.date,type:h.type,desc:h.description};
     if(h.page==='main')main.push(item);else cpc.push(item);
   });
@@ -1242,6 +1257,13 @@ function toggleTheme(){
   if(aF.length)renderMain();
 }
 
+// ════ 대시보드 새로고침 ════
+function refreshDash(){
+  window._mainNeedsRefresh=false;
+  _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
+  if(aF.length)renderMain();
+}
+
 // ════ 페이지 전환 ════
 function switchPage(pg,el){
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('on'));
@@ -1256,6 +1278,12 @@ function switchPage(pg,el){
   const titles={main:'성과 대시보드',camp:'캠페인 분석',cpc:'클릭당 비용 분석',report:'히스토리'};
   document.getElementById('pageTitle').textContent=titles[pg]||titles.main;
   
+  if(pg==='main'){
+    if(window._mainNeedsRefresh&&aF.length){
+      window._mainNeedsRefresh=false;
+      try{renderMain();}catch(e){console.error('renderMain 오류:',e);}
+    }
+  }
   if(pg==='camp'){
     const hasData=aF.length>0;
     document.getElementById('campEmpty').style.display=hasData?'none':'flex';
@@ -1989,7 +2017,7 @@ async function renderInsRpc(cur,prev,t){
       }}else{act.push({tag:modeTag(mode),t:`${e.df} 하락 — 캠페인 분석 탭에서 확인`});}
     }
     const rDates=new Set(evts.filter(e=>e.type==='E1'||e.type==='E6').map(e=>e.date));
-    for(const e of evts.filter(e=>e.type==='E2'&&!rDates.has(e.date)))sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});
+    for(const e of evts.filter(e=>e.type==='E2'&&!rDates.has(e.date)).slice(0,5))sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});
   }
   evts.filter(e=>e.type==='holiday').forEach(e=>{sum.push({icon:'🎌',t:`${e.name} 연휴(${e.days}일) — 수익률 ${C(Math.round(e.roas))}%`});});
   if(campAll){const cl=campAll.filter(v=>Number(v.spend)>10000).map(v=>{const r2=Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0;return{name:v.campaign,roas:r2,gg:goalGap(r2,getCampTarget(v.campaign))};});
@@ -2004,17 +2032,18 @@ async function renderInsRpc(cur,prev,t){
 // ══════ 캠페인 분석 ══════
 async function renderCampIns(data,t){
   const sum=[],act=[];
-  if(!insightStore.built){const rows=getRows();const{cur,prev}=getPer(rows,campP,'main');await buildInsightStore(rows,cur,prev,t);}
+  // 항상 캠페인 탭의 현재 기간으로 재빌드
+  const rows=getRows();const{cur,prev}=getPer(rows,campP,'main');
+  await buildInsightStore(rows,cur,prev,t);
   const mode=insightStore.mode;const isLong=insightStore.period>30;
   const sorted=[...data].sort((a,b)=>b.roas-a.roas);
   const high=data.filter(d=>d.roas>=d.target);
   const pct=data.length>0?Math.round(high.length/data.length*100):0;
   if(high.length)sum.push({icon:'✅',t:`${data.length}개 중 <b>${high.length}개(${pct}%)</b> 목표 달성`});
   if(sorted[0]){const gg2=goalGap(sorted[0].roas,sorted[0].target);sum.push({icon:'🏆',t:`최고: <b>${sorted[0].name.slice(0,18)}</b> ${C(Math.round(sorted[0].roas))}% (목표 대비 +${Math.round(gg2)}%)`});}
-  const anomalies=insightStore.events.filter(e=>e.type==='E1'||e.type==='E6');
+  const anomalies=insightStore.events.filter(e=>(e.type==='E1'||e.type==='E6')&&cur.includes(e.date));
   if(anomalies.length){
     sum.push({icon:'⚡',t:`이상치 <b>${anomalies.length}건</b> (${anomalies.slice(0,3).map(e=>e.df).join(', ')}${anomalies.length>3?' 외':''})`});
-    const rows=getRows();const{cur}=getPer(rows,campP,'main');
     for(const ev of anomalies.slice(0,isLong?1:2)){
       const diag=insightStore.campDiag[ev.date];if(!diag||!diag.length)continue;
       for(const ic of diag.slice(0,2)){
@@ -2060,14 +2089,14 @@ async function renderCampIns(data,t){
 async function renderCpcInsRpc(aAgg,mAgg,aPrev,mPrev,agg,pAgg,cur,prev){
   const sum=[],act=[];const mode=insightStore.built?insightStore.mode:getActionMode(cur.length);
   if(aAgg.roas>0&&mAgg.roas>0){const d2=Math.round(aAgg.roas-mAgg.roas);if(d2>0)sum.push({icon:'📊',t:`매출최적화 수익률 <b>${Cp(aAgg.roas)}</b> — 수동 대비 +${d2}%p`});else sum.push({icon:'📊',t:`수동 수익률 <b>${Cp(mAgg.roas)}</b> — 매출최적화 대비 +${Math.abs(d2)}%p`});}
-  const evts=insightStore.built?insightStore.events:[];const isLong=cur.length>30;
+  const evts=insightStore.built?insightStore.events.filter(e=>cur.includes(e.date)):[];const isLong=cur.length>30;
   if(isLong){const e1=evts.filter(e=>e.type==='E1'||e.type==='E6');if(e1.length)sum.push({icon:'⚡',t:`수익률 이상치 <b>${e1.length}건</b>`});}
-  else{evts.filter(e=>e.type==='E2').forEach(e=>{sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});});evts.filter(e=>e.type==='E1'||e.type==='E6').slice(0,2).forEach(e=>{let st=`${e.df} 수익률 ${C(Math.round(e.prevRoas))}%→${C(Math.round(e.roas))}% (${Math.round(e.drop)}%p↓)`;if(e.funnel.length)st+=` | 원인: ${e.funnel.map(f=>`<b>${f.stage}</b>(${Math.round(f.chg)}%)`).join(', ')}`;sum.push({icon:'⚡',t:st});});}
+  else{evts.filter(e=>e.type==='E2').slice(0,3).forEach(e=>{sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});});evts.filter(e=>e.type==='E1'||e.type==='E6').slice(0,2).forEach(e=>{let st=`${e.df} 수익률 ${C(Math.round(e.prevRoas))}%→${C(Math.round(e.roas))}% (${Math.round(e.drop)}%p↓)`;if(e.funnel.length)st+=` | 원인: ${e.funnel.map(f=>`<b>${f.stage}</b>(${Math.round(f.chg)}%)`).join(', ')}`;sum.push({icon:'⚡',t:st});});}
   const aDiff=pD(aAgg.cpc,aPrev.cpc);if(aDiff!==null&&aDiff>10)sum.push({icon:'📈',t:`매출최적화 클릭당비용 ₩${C(Math.round(aPrev.cpc))}→₩${C(Math.round(aAgg.cpc))} (+${aDiff.toFixed(1)}%) — 경쟁 심화`});
   if(prev.length){const kwIns=await rpc('get_cpc_kw_insight',{p_cur:cur,p_prev:prev,p_limit:50});if(kwIns&&kwIns.length){const t50=new Set(kwIns.filter(d=>!d.is_manual).slice(0,50).map(d=>d.kw));const mk=new Set(kwIns.filter(d=>d.is_manual).map(d=>d.kw));const cs=kwIns.filter(d=>t50.has(d.kw)&&!d.is_manual&&Number(d.c_clicks)>=10&&Number(d.p_clicks)>=5).map(d=>{const cc=Number(d.c_clicks)>0?Number(d.c_spend)/Number(d.c_clicks):0;const pc=Number(d.p_clicks)>0?Number(d.p_spend)/Number(d.p_clicks):0;const cr=Number(d.c_spend)>0?Number(d.c_rev)/Number(d.c_spend)*100:0;return{kw:d.kw,cc,pc,chg:pc>0?((cc-pc)/pc*100):0,rev:Number(d.c_rev),roas:cr,isManu:mk.has(d.kw)};}).filter(d=>d.chg>20).sort((a,b)=>b.chg-a.chg).slice(0,3);
   if(cs.length){sum.push({icon:'⚡',t:`클릭당비용 급등: ${cs.map(d=>`'<b>${d.kw}</b>' ₩${C(Math.round(d.pc))}→₩${C(Math.round(d.cc))}(+${Math.round(d.chg)}%)`).join(', ')}`});cs.forEach(d=>{if(d.isManu)act.push({tag:'조정',t:`'<b>${d.kw}</b>' 수동 클릭당비용 +${Math.round(d.chg)}% — 입찰 조정 테스트`});else if(d.roas>=800)act.push({tag:'조정',t:`'<b>${d.kw}</b>' 클릭당비용↑ 수익률 양호 — 수동 전환 후보`});else act.push({tag:modeTagHigh(mode),t:`'<b>${d.kw}</b>' 클릭당비용 +${Math.round(d.chg)}% 수익률 ${C(Math.round(d.roas))}% — 예산 축소 검토`});});}
   const rd=kwIns.filter(d=>t50.has(d.kw)&&Number(d.c_spend)>=10000&&Number(d.p_spend)>=5000).map(d=>{const cr=Number(d.c_spend)>0?Number(d.c_rev)/Number(d.c_spend)*100:0;const pr=Number(d.p_spend)>0?Number(d.p_rev)/Number(d.p_spend)*100:0;const cc=Number(d.c_clicks)>0?Number(d.c_spend)/Number(d.c_clicks):0;const pc=Number(d.p_clicks)>0?Number(d.p_spend)/Number(d.p_clicks):0;const cpcC=pc>0?((cc-pc)/pc*100):0;const cv=Number(d.c_clicks)>0?Number(d.c_orders)/Number(d.c_clicks)*100:0;const pv=Number(d.p_clicks)>0?Number(d.p_orders)/Number(d.p_clicks)*100:0;const cvrC=pv>0?((cv-pv)/pv*100):0;let tp='D';if(cpcC>15&&Math.abs(cvrC)<=10)tp='A';else if(Math.abs(cpcC)<=10&&cvrC<-15)tp='B';else if(cpcC>15&&cvrC<-15)tp='C';return{kw:d.kw,cr,pr,chgP:cr-pr,tp,isManu:d.is_manual,pc};}).filter(d=>d.chgP<-100).sort((a,b)=>a.chgP-b.chgP).slice(0,3);
-  rd.forEach(d=>{const tl=d.tp==='A'?'클릭당비용↑':d.tp==='B'?'CVR↓':d.tp==='C'?'복합':'기타';act.push({tag:modeTagHigh(mode),t:`'<b>${d.kw}</b>' 수익률 ${C(Math.round(d.pr))}%→${C(Math.round(d.cr))}% — <b>${tl}</b>`});});
+  rd.forEach(d=>{const tl=d.tp==='A'?'클릭당비용 상승형':d.tp==='B'?'CVR 하락형':d.tp==='C'?'복합형':'기타';let rec='';if(d.tp==='A')rec=d.isManu?'. 수동 입찰가 5~10% 하향 조정 테스트 권장':'. 클릭당비용 과다 — 수동 캠페인 전환 또는 예산 축소 검토';else if(d.tp==='B')rec='. 전환율 하락 — 상세페이지 점검, 경쟁사 프로모션/가격/리뷰 변동 확인';else if(d.tp==='C')rec='. 클릭당비용↑ + 전환율↓ 동시 발생 — 입찰가 조정 + 상세페이지 점검 병행';else rec='. 원인 복합적 — 캠페인 분석 탭에서 해당 키워드 상세 추이 확인';act.push({tag:modeTagHigh(mode),t:`'<b>${d.kw}</b>' 수익률 ${C(Math.round(d.pr))}%→${C(Math.round(d.cr))}% — <b>${tl}</b>${rec}`});});
   const cn=kwIns.filter(d=>t50.has(d.kw)&&!d.is_manual&&Number(d.c_clicks)>=30&&Number(d.c_spend)>0&&(Number(d.c_rev)/Number(d.c_spend)*100)>=800&&Number(d.c_rev)>=100000).map(d=>({kw:d.kw,roas:Number(d.c_spend)>0?Number(d.c_rev)/Number(d.c_spend)*100:0,rev:Number(d.c_rev),cpc:Number(d.c_clicks)>0?Number(d.c_spend)/Number(d.c_clicks):0})).sort((a,b)=>b.rev-a.rev).slice(0,3);
   if(cn.length)act.push({tag:'조정',t:`수동 확장 후보: ${cn.map(d=>`'<b>${d.kw}</b>'(${C(Math.round(d.roas))}%)`).join(', ')}`});}}
   const aRD=pD(aAgg.roas,aPrev.roas);if(aRD!==null&&aRD<-15)act.push({tag:modeTagHigh(mode),t:`매출최적화 수익률 ${Cp(aPrev.roas)}→${Cp(aAgg.roas)} — 저성과 키워드 재배분`});
@@ -2685,7 +2714,7 @@ function renderH(page){
 let campP='7일',slideGr='일별',slideCampData=null,slideCampName='';
 let campRoasTargets=JSON.parse(localStorage.getItem('campRoasTargets')||'{}');
 function getCampTarget(name){return campRoasTargets[name]||500;}
-function setCampTarget(name,val){campRoasTargets[name]=val;localStorage.setItem('campRoasTargets',JSON.stringify(campRoasTargets));}
+function setCampTarget(name,val){campRoasTargets[name]=val;localStorage.setItem('campRoasTargets',JSON.stringify(campRoasTargets));window._mainNeedsRefresh=true;window._skipDetailScroll=true;renderCampPage();}
 
 // 공유 MIX 광고수익률 계산 함수
 async function calcMixRoas(period){
@@ -2740,9 +2769,10 @@ async function renderCampPage(){
   if(mixEl)mixEl.innerHTML=`MIX 목표 광고수익률: <b style="color:var(--accent)">${C(Math.round(mixTarget))}%</b> <span style="font-size:10px;color:var(--text3)">(캠페인별 목표의 광고비 가중평균)</span>`;
   const selName=slideCampName;
   document.querySelector('#campTbl thead').innerHTML=`<tr><th>캠페인명</th><th>노출수</th><th>클릭수</th><th>클릭률</th><th>클릭당비용</th><th>전환율</th><th>집행광고비</th><th>광고전환매출</th><th>광고수익률<br><span style="font-size:9px;color:var(--text3)">(${cmpL} 대비)</span></th><th>수익률 목표</th><th style="border-left:2px solid var(--border)">광고비 비중</th><th>매출액 비중</th></tr>`;
-  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()"><input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--accent3);border-radius:4px;background:rgba(124,106,247,.1);color:var(--accent3);font-size:11px;text-align:center;font-family:'DM Mono',monospace;font-weight:700" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value));renderCampPage()"/>%</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
+  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"><input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--accent3);border-radius:4px;background:rgba(124,106,247,.1);color:var(--accent3);font-size:11px;text-align:center;font-family:'DM Mono',monospace;font-weight:700" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value))"/>%</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
   await renderCampIns(tblData,globalT);
-  if(slideCampName)openCampDetail(slideCampName);
+  if(slideCampName&&!window._skipDetailScroll)openCampDetail(slideCampName);
+  window._skipDetailScroll=false;
 }
 async function openCampDetail(name){slideCampName=name;slideGr='일별';document.getElementById('campDetailArea').style.display='block';document.getElementById('campDetailTitle').textContent='📊 '+name;const rows=getRows();const{cur,prev,lbl}=getPer(rows,campP,'main');const cmpL=lbl.includes('vs')?lbl.split('vs')[1].trim():'이전 기간';document.getElementById('campDetailSub').textContent=`세부 캠페인 분석 · ${lbl}`;document.querySelectorAll('#campTbl tbody tr').forEach(tr=>{tr.style.background=tr.textContent.includes(name)?'rgba(61,142,248,.08)':'';});slideCampData=await rpc('get_camp_daily',{p_campaign:name,p_dates:cur});if(!slideCampData)slideCampData=[];const prevData=prev.length?await rpc('get_camp_daily',{p_campaign:name,p_dates:prev}):[];const s=slideCampData.reduce((a,r)=>a+Number(r.spend),0),rv=slideCampData.reduce((a,r)=>a+Number(r.rev),0),cl=slideCampData.reduce((a,r)=>a+Number(r.clicks),0),im=slideCampData.reduce((a,r)=>a+Number(r.imp),0);const roas=s>0?rv/s*100:0,cpc=cl>0?s/cl:0;const ps=(prevData||[]).reduce((a,r)=>a+Number(r.spend),0),prv=(prevData||[]).reduce((a,r)=>a+Number(r.rev),0),pcl=(prevData||[]).reduce((a,r)=>a+Number(r.clicks),0),pim=(prevData||[]).reduce((a,r)=>a+Number(r.imp),0);const pRoas=ps>0?prv/ps*100:0,pCpc=pcl>0?ps/pcl:0;
 document.getElementById('campDetailKpi').innerHTML=[{l:'노출수',v:fN(im)+'회',d:pD(im,pim),c:'c1'},{l:'클릭당비용',v:'₩'+C(Math.round(cpc)),d:pD(cpc,pCpc),c:'c2',inv:true},{l:'광고비',v:fW(s),d:pD(s,ps),c:'c3'},{l:'전환매출',v:fW(rv),d:pD(rv,prv),c:'c4'},{l:'광고수익률',v:C(Math.round(roas))+'%',d:pD(roas,pRoas),c:'c5'}].map(k=>{const tag=k.d===null?'<span class="tag tneu">-</span>':k.inv?dTcpc(k.d):dT(k.d);return`<div class="kpi ${k.c}" style="animation:none;opacity:1;transform:none"><div class="kpi-lbl">${k.l}</div><div class="kpi-val">${k.v}</div><div class="kpi-cmp">${tag}<span style="font-size:10px;color:var(--text3);margin-left:3px">${cmpL}</span></div></div>`;}).join('');
@@ -2771,8 +2801,10 @@ async function initFromDB(){
       console.log(`✅ DB 로드 완료`);
     }
     const hist=await loadHistDB();
-    if(hist.main.length){mainHist=hist.main;localStorage.setItem('pa_hist',JSON.stringify(mainHist));renderH('main');}
-    if(hist.cpc.length){cpcHist=hist.cpc;localStorage.setItem('pa_cpc_hist',JSON.stringify(cpcHist));renderH('cpc');}
+    mainHist=hist.main||[];cpcHist=hist.cpc||[];
+    localStorage.setItem('pa_hist',JSON.stringify(mainHist));
+    localStorage.setItem('pa_cpc_hist',JSON.stringify(cpcHist));
+    renderH('main');renderH('cpc');
   }catch(e){console.error('DB 초기 로드 실패:',e);}
 }
 </script>
