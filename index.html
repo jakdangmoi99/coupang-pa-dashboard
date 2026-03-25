@@ -375,7 +375,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 <!-- ADMIN VIEWING BANNER -->
 <div class="admin-banner" id="adminBanner">
   <span>👑 <span id="adminViewLabel">고객 데이터 보는 중</span></span>
-  <button onclick="resetAdminView()">내 데이터로 돌아가기</button>
+  <button onclick="if(adminTargetUid){window.close();}else{resetAdminView();}">이 탭 닫기</button>
 </div>
 
 <!-- PAGE TABS (hidden) -->
@@ -949,8 +949,21 @@ async function onAuthSuccess(){
   // 테마 동기화
   const dk=document.documentElement.getAttribute('data-theme')==='dark';
   document.getElementById('tBtn').textContent=dk?'🌙':'☀️';
-  // 관리자 패널 초기화
-  if(currentUser.id===ADMIN_UID){
+  // 관리자: view_as 파라미터 감지 (새 탭 읽기 전용)
+  const urlParams=new URLSearchParams(window.location.search);
+  const viewAs=urlParams.get('view_as');
+  if(viewAs && currentUser.id===ADMIN_UID){
+    adminTargetUid=viewAs;
+    document.getElementById('adminBanner').style.display='flex';
+    document.getElementById('adminViewLabel').textContent='고객 데이터 보는 중 (읽기 전용)';
+    // 파일 업로드 숨기기
+    const fileBtn=document.querySelector('.btn-pr');if(fileBtn&&fileBtn.textContent.includes('파일'))fileBtn.style.display='none';
+    const fileInput=document.getElementById('fileInput');if(fileInput)fileInput.disabled=true;
+    // 히스토리 추가 버튼 숨기기
+    document.querySelectorAll('.hist-form').forEach(f=>f.style.display='none');
+  }
+  // 관리자 패널 (본인 탭에서만)
+  if(currentUser.id===ADMIN_UID && !viewAs){
     document.getElementById('adminPanel').style.display='block';
     loadUserList();
   }
@@ -980,25 +993,15 @@ async function loadUserList(){
 async function switchAdminView(){
   const sel=document.getElementById('adminUserSel');
   const uid=sel.value;
-  if(!uid){resetAdminView();return;}
-  adminTargetUid=uid;
-  const label=sel.options[sel.selectedIndex].text;
-  // 배너 표시
-  document.getElementById('adminBanner').style.display='flex';
-  document.getElementById('adminViewLabel').textContent=`${label} 데이터 보는 중`;
-  // 캐시 초기화 & 데이터 재로드
-  _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
-  aF=[];mainHist=[];cpcHist=[];
-  // 메인 탭으로 전환 후 로드
-  const mainNav=document.querySelector('.nav-item');
-  if(mainNav)switchPage('main',mainNav);
-  await initFromDB();
+  if(!uid){return;}
+  // 새 탭으로 열기 (읽기 전용)
+  window.open(window.location.origin+'/?view_as='+uid,'_blank');
+  sel.value=''; // 드롭다운 원래대로
 }
 
 function resetAdminView(){
   adminTargetUid=null;
   document.getElementById('adminBanner').style.display='none';
-  document.getElementById('adminUserSel').value='';
   // 캐시 초기화 & 내 데이터 재로드
   _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
   aF=[];mainHist=[];cpcHist=[];
@@ -1071,6 +1074,8 @@ async function doSetupPassword(){
 
 // DB에 엑셀 데이터 저장
 async function saveToDB(month,fileName,rows){
+  // 관리자 읽기 전용 모드에서는 저장 차단
+  if(adminTargetUid){console.warn('읽기 전용 모드 — 저장 차단');return;}
   // 같은 월 데이터 통째로 삭제 후 새로 저장 (중복 방지)
   const uid=currentUser?.id||null;
   const{error:delErr}=await sb.from('pa_data').delete().eq('file_month',month).eq('user_id',uid);
@@ -1213,7 +1218,9 @@ function dbToAF(data){
 
 // DB에 히스토리 저장
 async function saveHistDB(page,arr){
-  const uid=adminTargetUid||(currentUser?.id||null);
+  // 관리자 읽기 전용 모드에서는 저장 차단
+  if(adminTargetUid){console.warn('읽기 전용 모드 — 히스토리 저장 차단');return;}
+  const uid=currentUser?.id||null;
   // 기존 히스토리 삭제 (RPC 사용)
   await rpc('delete_history',{p_page:page});
   if(arr.length){
