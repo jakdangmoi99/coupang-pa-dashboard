@@ -2017,7 +2017,7 @@ async function renderInsRpc(cur,prev,t){
       }}else{act.push({tag:modeTag(mode),t:`${e.df} 하락 — 캠페인 분석 탭에서 확인`});}
     }
     const rDates=new Set(evts.filter(e=>e.type==='E1'||e.type==='E6').map(e=>e.date));
-    for(const e of evts.filter(e=>e.type==='E2'&&!rDates.has(e.date)))sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});
+    for(const e of evts.filter(e=>e.type==='E2'&&!rDates.has(e.date)).slice(0,5))sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});
   }
   evts.filter(e=>e.type==='holiday').forEach(e=>{sum.push({icon:'🎌',t:`${e.name} 연휴(${e.days}일) — 수익률 ${C(Math.round(e.roas))}%`});});
   if(campAll){const cl=campAll.filter(v=>Number(v.spend)>10000).map(v=>{const r2=Number(v.spend)>0?Number(v.rev)/Number(v.spend)*100:0;return{name:v.campaign,roas:r2,gg:goalGap(r2,getCampTarget(v.campaign))};});
@@ -2088,9 +2088,9 @@ async function renderCampIns(data,t){
 async function renderCpcInsRpc(aAgg,mAgg,aPrev,mPrev,agg,pAgg,cur,prev){
   const sum=[],act=[];const mode=insightStore.built?insightStore.mode:getActionMode(cur.length);
   if(aAgg.roas>0&&mAgg.roas>0){const d2=Math.round(aAgg.roas-mAgg.roas);if(d2>0)sum.push({icon:'📊',t:`매출최적화 수익률 <b>${Cp(aAgg.roas)}</b> — 수동 대비 +${d2}%p`});else sum.push({icon:'📊',t:`수동 수익률 <b>${Cp(mAgg.roas)}</b> — 매출최적화 대비 +${Math.abs(d2)}%p`});}
-  const evts=insightStore.built?insightStore.events:[];const isLong=cur.length>30;
+  const evts=insightStore.built?insightStore.events.filter(e=>cur.includes(e.date)):[];const isLong=cur.length>30;
   if(isLong){const e1=evts.filter(e=>e.type==='E1'||e.type==='E6');if(e1.length)sum.push({icon:'⚡',t:`수익률 이상치 <b>${e1.length}건</b>`});}
-  else{evts.filter(e=>e.type==='E2').forEach(e=>{sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});});evts.filter(e=>e.type==='E1'||e.type==='E6').slice(0,2).forEach(e=>{let st=`${e.df} 수익률 ${C(Math.round(e.prevRoas))}%→${C(Math.round(e.roas))}% (${Math.round(e.drop)}%p↓)`;if(e.funnel.length)st+=` | 원인: ${e.funnel.map(f=>`<b>${f.stage}</b>(${Math.round(f.chg)}%)`).join(', ')}`;sum.push({icon:'⚡',t:st});});}
+  else{evts.filter(e=>e.type==='E2').slice(0,3).forEach(e=>{sum.push({icon:'⚡',t:`${e.df} 클릭당비용 ₩${C(Math.round(e.cpc))} (평균 대비 +${Math.round(e.pctUp)}%)`});});evts.filter(e=>e.type==='E1'||e.type==='E6').slice(0,2).forEach(e=>{let st=`${e.df} 수익률 ${C(Math.round(e.prevRoas))}%→${C(Math.round(e.roas))}% (${Math.round(e.drop)}%p↓)`;if(e.funnel.length)st+=` | 원인: ${e.funnel.map(f=>`<b>${f.stage}</b>(${Math.round(f.chg)}%)`).join(', ')}`;sum.push({icon:'⚡',t:st});});}
   const aDiff=pD(aAgg.cpc,aPrev.cpc);if(aDiff!==null&&aDiff>10)sum.push({icon:'📈',t:`매출최적화 클릭당비용 ₩${C(Math.round(aPrev.cpc))}→₩${C(Math.round(aAgg.cpc))} (+${aDiff.toFixed(1)}%) — 경쟁 심화`});
   if(prev.length){const kwIns=await rpc('get_cpc_kw_insight',{p_cur:cur,p_prev:prev,p_limit:50});if(kwIns&&kwIns.length){const t50=new Set(kwIns.filter(d=>!d.is_manual).slice(0,50).map(d=>d.kw));const mk=new Set(kwIns.filter(d=>d.is_manual).map(d=>d.kw));const cs=kwIns.filter(d=>t50.has(d.kw)&&!d.is_manual&&Number(d.c_clicks)>=10&&Number(d.p_clicks)>=5).map(d=>{const cc=Number(d.c_clicks)>0?Number(d.c_spend)/Number(d.c_clicks):0;const pc=Number(d.p_clicks)>0?Number(d.p_spend)/Number(d.p_clicks):0;const cr=Number(d.c_spend)>0?Number(d.c_rev)/Number(d.c_spend)*100:0;return{kw:d.kw,cc,pc,chg:pc>0?((cc-pc)/pc*100):0,rev:Number(d.c_rev),roas:cr,isManu:mk.has(d.kw)};}).filter(d=>d.chg>20).sort((a,b)=>b.chg-a.chg).slice(0,3);
   if(cs.length){sum.push({icon:'⚡',t:`클릭당비용 급등: ${cs.map(d=>`'<b>${d.kw}</b>' ₩${C(Math.round(d.pc))}→₩${C(Math.round(d.cc))}(+${Math.round(d.chg)}%)`).join(', ')}`});cs.forEach(d=>{if(d.isManu)act.push({tag:'조정',t:`'<b>${d.kw}</b>' 수동 클릭당비용 +${Math.round(d.chg)}% — 입찰 조정 테스트`});else if(d.roas>=800)act.push({tag:'조정',t:`'<b>${d.kw}</b>' 클릭당비용↑ 수익률 양호 — 수동 전환 후보`});else act.push({tag:modeTagHigh(mode),t:`'<b>${d.kw}</b>' 클릭당비용 +${Math.round(d.chg)}% 수익률 ${C(Math.round(d.roas))}% — 예산 축소 검토`});});}
