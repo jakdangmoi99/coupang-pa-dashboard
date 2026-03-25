@@ -343,6 +343,15 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     <div class="sidebar-guide">
       <a href="#" id="guideLink" class="guide-link" target="_blank" rel="noopener">📖 사용법 안내</a>
       <a href="#" id="updateLink" class="guide-link" target="_blank" rel="noopener">🔔 업데이트 안내</a>
+      <button class="guide-link" id="shareLinkBtn" onclick="toggleSharePanel()" style="display:none;width:100%;text-align:left;cursor:pointer;background:none;font-family:'Pretendard',sans-serif">🔗 공유 링크</button>
+    </div>
+    <div id="sharePanel" style="display:none;padding:6px 14px 10px">
+      <div style="font-size:10px;font-weight:700;color:var(--accent2);margin-bottom:6px">읽기 전용 공유 링크</div>
+      <div style="display:flex;gap:4px;align-items:center">
+        <input type="text" id="shareUrl" readonly style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:6px;background:var(--surf2);color:var(--text);font-size:10px;font-family:'DM Mono',monospace;outline:none" value="생성 중..."/>
+        <button onclick="copyShareLink()" style="padding:5px 8px;border:1px solid var(--accent2);border-radius:6px;background:rgba(0,212,180,.1);color:var(--accent2);font-size:10px;font-weight:700;cursor:pointer;font-family:'Pretendard',sans-serif;white-space:nowrap">복사</button>
+      </div>
+      <button onclick="revokeShareLink()" style="margin-top:6px;padding:3px 8px;border:1px solid var(--border);border-radius:5px;background:transparent;color:var(--text3);font-size:9px;cursor:pointer;font-family:'Pretendard',sans-serif">🚫 링크 비활성화</button>
     </div>
     <div class="sidebar-user" id="sidebarUser" style="display:none">
       <div class="user-email" id="sideUserEmail">-</div>
@@ -376,6 +385,11 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
 <div class="admin-banner" id="adminBanner">
   <span>👑 <span id="adminViewLabel">고객 데이터 보는 중</span></span>
   <button onclick="if(adminTargetUid){window.close();}else{resetAdminView();}">이 탭 닫기</button>
+</div>
+
+<!-- SHARE VIEWER BANNER -->
+<div class="admin-banner" id="shareBanner" style="display:none;background:linear-gradient(90deg,rgba(0,212,180,.12),rgba(61,142,248,.08));border-color:rgba(0,212,180,.3)">
+  <span style="color:var(--accent2)">👁 읽기 전용 뷰어</span>
 </div>
 
 <!-- PAGE TABS (hidden) -->
@@ -892,7 +906,7 @@ async function doLogin(){
 
 async function doLogout(){
   await sb.auth.signOut();
-  currentUser=null;currentSub=null;adminTargetUid=null;
+  currentUser=null;currentSub=null;adminTargetUid=null;isShareMode=false;shareOwnerUid=null;
   document.getElementById('loginOverlay').style.display='flex';
   document.getElementById('appContainer').style.display='none';
   document.getElementById('expiredOverlay').style.display='none';
@@ -900,6 +914,9 @@ async function doLogout(){
   document.getElementById('subBadge').style.display='none';
   document.getElementById('adminPanel').style.display='none';
   document.getElementById('adminBanner').style.display='none';
+  document.getElementById('shareBanner').style.display='none';
+  document.getElementById('shareLinkBtn').style.display='none';
+  document.getElementById('sharePanel').style.display='none';
   document.getElementById('loginEmail').value='';
   document.getElementById('loginPw').value='';
   document.getElementById('loginErr').textContent='';
@@ -966,6 +983,10 @@ async function onAuthSuccess(){
   if(currentUser.id===ADMIN_UID && !viewAs){
     document.getElementById('adminPanel').style.display='block';
     loadUserList();
+  }
+  // 공유 링크 버튼 (본인 탭에서만, view_as가 아닐 때)
+  if(!viewAs){
+    document.getElementById('shareLinkBtn').style.display='';
   }
   // 구독 체크
   const active=await checkSubscription();
@@ -1040,8 +1061,83 @@ async function doSetupPassword(){
   btn.disabled=false;btn.textContent='비밀번호 설정 완료';
 }
 
-// 페이지 로드 시 세션 복원 + 초대 링크 감지
+// ════ 공유 링크 (뷰어) ════
+let isShareMode=false;
+let shareOwnerUid=null;
+
+async function toggleSharePanel(){
+  const panel=document.getElementById('sharePanel');
+  if(panel.style.display==='none'){
+    panel.style.display='block';
+    const{data,error}=await sb.rpc('create_share_token');
+    if(error){console.error('공유 토큰 생성 오류:',error);return;}
+    const token=typeof data==='string'?data:data;
+    document.getElementById('shareUrl').value=`${window.location.origin}/?share=${token}`;
+  }else{panel.style.display='none';}
+}
+
+function copyShareLink(){
+  const input=document.getElementById('shareUrl');
+  input.select();
+  document.execCommand('copy');
+  const btn=event.target;btn.textContent='✅ 복사됨';
+  setTimeout(()=>{btn.textContent='복사';},1500);
+}
+
+async function revokeShareLink(){
+  if(!confirm('공유 링크를 비활성화하시겠어요?\n비활성화하면 기존 링크로 접속할 수 없습니다.'))return;
+  await sb.rpc('revoke_share_token');
+  document.getElementById('shareUrl').value='비활성화됨';
+  document.getElementById('sharePanel').style.display='none';
+}
+
+async function initShareMode(token){
+  isShareMode=true;
+  // 토큰으로 user_id 조회 (비로그인 RPC)
+  const{data,error}=await sb.rpc('get_user_by_share_token',{p_token:token});
+  if(error||!data||!data.length){
+    document.getElementById('loginOverlay').style.display='none';
+    document.getElementById('expiredOverlay').style.display='flex';
+    document.getElementById('expiredMsg').innerHTML='유효하지 않은 공유 링크입니다.<br>링크가 만료되었거나 비활성화되었습니다.';
+    return;
+  }
+  const row=data[0];
+  if(!row.is_active){
+    document.getElementById('loginOverlay').style.display='none';
+    document.getElementById('expiredOverlay').style.display='flex';
+    document.getElementById('expiredMsg').innerHTML='구독이 만료되어 공유 링크를 사용할 수 없습니다.';
+    return;
+  }
+  shareOwnerUid=row.user_id;
+  adminTargetUid=row.user_id;
+  // UI 설정 — 읽기 전용
+  document.getElementById('loginOverlay').style.display='none';
+  document.getElementById('appContainer').style.display='flex';
+  document.getElementById('shareBanner').style.display='flex';
+  // 숨길 요소들
+  const fileBtn=document.querySelector('.btn-pr');if(fileBtn&&fileBtn.textContent.includes('파일'))fileBtn.style.display='none';
+  const fileInput=document.getElementById('fileInput');if(fileInput)fileInput.disabled=true;
+  document.querySelectorAll('.hist-form').forEach(f=>f.style.display='none');
+  document.getElementById('sidebarUser').style.display='none';
+  document.getElementById('shareLinkBtn').style.display='none';
+  document.getElementById('subBadge').style.display='none';
+  // 사이드바 로고 아래에 뷰어 표시
+  const logoDiv=document.querySelector('.sidebar-logo div:last-child');
+  if(logoDiv){const p=logoDiv.querySelector('p');if(p)p.textContent='👁 읽기 전용 뷰어';}
+  // 데이터 로드
+  await initFromDB();
+}
+
+// 페이지 로드 시 세션 복원 + 초대 링크 감지 + 공유 링크 감지
 (async function checkSession(){
+  // 공유 링크 감지 (?share=TOKEN)
+  const urlParams=new URLSearchParams(window.location.search);
+  const shareToken=urlParams.get('share');
+  if(shareToken){
+    await initShareMode(shareToken);
+    return;
+  }
+
   // URL 해시에서 초대/복구 토큰 감지
   const hash=window.location.hash;
   const isInvite=hash.includes('type=invite')||hash.includes('type=recovery')||hash.includes('type=magiclink');
@@ -1126,8 +1222,8 @@ async function saveToDB(month,fileName,rows){
 
 // ── RPC 호출 함수들 ──
 async function rpc(fn,params={}){
-  // 관리자 모드: 다른 고객 데이터 조회 시 p_target_uid 자동 주입
-  if(adminTargetUid && currentUser?.id===ADMIN_UID && fn!=='get_my_subscription'){
+  // 관리자 모드 또는 공유 모드: p_target_uid 자동 주입
+  if(adminTargetUid && (currentUser?.id===ADMIN_UID || isShareMode) && fn!=='get_my_subscription'){
     params={...params, p_target_uid:adminTargetUid};
   }
   const{data,error}=await sb.rpc(fn,params);
