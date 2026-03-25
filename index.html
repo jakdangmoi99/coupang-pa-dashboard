@@ -988,7 +988,10 @@ async function switchAdminView(){
   document.getElementById('adminViewLabel').textContent=`${label} 데이터 보는 중`;
   // 캐시 초기화 & 데이터 재로드
   _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
-  aF=[];
+  aF=[];mainHist=[];cpcHist=[];
+  // 메인 탭으로 전환 후 로드
+  const mainNav=document.querySelector('.nav-item');
+  if(mainNav)switchPage('main',mainNav);
   await initFromDB();
 }
 
@@ -998,7 +1001,9 @@ function resetAdminView(){
   document.getElementById('adminUserSel').value='';
   // 캐시 초기화 & 내 데이터 재로드
   _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
-  aF=[];
+  aF=[];mainHist=[];cpcHist=[];
+  const mainNav=document.querySelector('.nav-item');
+  if(mainNav)switchPage('main',mainNav);
   initFromDB();
 }
 
@@ -1208,20 +1213,22 @@ function dbToAF(data){
 
 // DB에 히스토리 저장
 async function saveHistDB(page,arr){
-  const uid=currentUser?.id||null;
-  await sb.from('pa_history').delete().eq('page',page).eq('user_id',uid);
+  const uid=adminTargetUid||(currentUser?.id||null);
+  // 기존 히스토리 삭제 (RPC 사용)
+  await rpc('delete_history',{p_page:page});
   if(arr.length){
     const mapped=arr.map(h=>({page,date:h.date,type:h.type,description:h.desc,user_id:uid}));
-    await sb.from('pa_history').insert(mapped);
+    // RLS 우회를 위해 RPC로 삽입
+    await rpc('insert_history',{p_rows:JSON.stringify(mapped)});
   }
 }
 
-// DB에서 히스토리 로드
+// DB에서 히스토리 로드 (RPC 기반 — 관리자 모드 지원)
 async function loadHistDB(){
-  const{data,error}=await sb.from('pa_history').select('*').order('created_at',{ascending:false});
-  if(error){console.error('히스토리 로드 오류:',error);return{main:[],cpc:[]};}
+  const data=await rpc('get_history');
+  if(!data||!data.length)return{main:[],cpc:[]};
   const main=[],cpc=[];
-  (data||[]).forEach(h=>{
+  data.forEach(h=>{
     const item={id:h.id,date:h.date,type:h.type,desc:h.description};
     if(h.page==='main')main.push(item);else cpc.push(item);
   });
@@ -2786,8 +2793,10 @@ async function initFromDB(){
       console.log(`✅ DB 로드 완료`);
     }
     const hist=await loadHistDB();
-    if(hist.main.length){mainHist=hist.main;localStorage.setItem('pa_hist',JSON.stringify(mainHist));renderH('main');}
-    if(hist.cpc.length){cpcHist=hist.cpc;localStorage.setItem('pa_cpc_hist',JSON.stringify(cpcHist));renderH('cpc');}
+    mainHist=hist.main||[];cpcHist=hist.cpc||[];
+    localStorage.setItem('pa_hist',JSON.stringify(mainHist));
+    localStorage.setItem('pa_cpc_hist',JSON.stringify(cpcHist));
+    renderH('main');renderH('cpc');
   }catch(e){console.error('DB 초기 로드 실패:',e);}
 }
 </script>
