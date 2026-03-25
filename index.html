@@ -2032,17 +2032,18 @@ async function renderInsRpc(cur,prev,t){
 // ══════ 캠페인 분석 ══════
 async function renderCampIns(data,t){
   const sum=[],act=[];
-  if(!insightStore.built){const rows=getRows();const{cur,prev}=getPer(rows,campP,'main');await buildInsightStore(rows,cur,prev,t);}
+  // 항상 캠페인 탭의 현재 기간으로 재빌드
+  const rows=getRows();const{cur,prev}=getPer(rows,campP,'main');
+  await buildInsightStore(rows,cur,prev,t);
   const mode=insightStore.mode;const isLong=insightStore.period>30;
   const sorted=[...data].sort((a,b)=>b.roas-a.roas);
   const high=data.filter(d=>d.roas>=d.target);
   const pct=data.length>0?Math.round(high.length/data.length*100):0;
   if(high.length)sum.push({icon:'✅',t:`${data.length}개 중 <b>${high.length}개(${pct}%)</b> 목표 달성`});
   if(sorted[0]){const gg2=goalGap(sorted[0].roas,sorted[0].target);sum.push({icon:'🏆',t:`최고: <b>${sorted[0].name.slice(0,18)}</b> ${C(Math.round(sorted[0].roas))}% (목표 대비 +${Math.round(gg2)}%)`});}
-  const anomalies=insightStore.events.filter(e=>e.type==='E1'||e.type==='E6');
+  const anomalies=insightStore.events.filter(e=>(e.type==='E1'||e.type==='E6')&&cur.includes(e.date));
   if(anomalies.length){
     sum.push({icon:'⚡',t:`이상치 <b>${anomalies.length}건</b> (${anomalies.slice(0,3).map(e=>e.df).join(', ')}${anomalies.length>3?' 외':''})`});
-    const rows=getRows();const{cur}=getPer(rows,campP,'main');
     for(const ev of anomalies.slice(0,isLong?1:2)){
       const diag=insightStore.campDiag[ev.date];if(!diag||!diag.length)continue;
       for(const ic of diag.slice(0,2)){
@@ -2095,7 +2096,7 @@ async function renderCpcInsRpc(aAgg,mAgg,aPrev,mPrev,agg,pAgg,cur,prev){
   if(prev.length){const kwIns=await rpc('get_cpc_kw_insight',{p_cur:cur,p_prev:prev,p_limit:50});if(kwIns&&kwIns.length){const t50=new Set(kwIns.filter(d=>!d.is_manual).slice(0,50).map(d=>d.kw));const mk=new Set(kwIns.filter(d=>d.is_manual).map(d=>d.kw));const cs=kwIns.filter(d=>t50.has(d.kw)&&!d.is_manual&&Number(d.c_clicks)>=10&&Number(d.p_clicks)>=5).map(d=>{const cc=Number(d.c_clicks)>0?Number(d.c_spend)/Number(d.c_clicks):0;const pc=Number(d.p_clicks)>0?Number(d.p_spend)/Number(d.p_clicks):0;const cr=Number(d.c_spend)>0?Number(d.c_rev)/Number(d.c_spend)*100:0;return{kw:d.kw,cc,pc,chg:pc>0?((cc-pc)/pc*100):0,rev:Number(d.c_rev),roas:cr,isManu:mk.has(d.kw)};}).filter(d=>d.chg>20).sort((a,b)=>b.chg-a.chg).slice(0,3);
   if(cs.length){sum.push({icon:'⚡',t:`클릭당비용 급등: ${cs.map(d=>`'<b>${d.kw}</b>' ₩${C(Math.round(d.pc))}→₩${C(Math.round(d.cc))}(+${Math.round(d.chg)}%)`).join(', ')}`});cs.forEach(d=>{if(d.isManu)act.push({tag:'조정',t:`'<b>${d.kw}</b>' 수동 클릭당비용 +${Math.round(d.chg)}% — 입찰 조정 테스트`});else if(d.roas>=800)act.push({tag:'조정',t:`'<b>${d.kw}</b>' 클릭당비용↑ 수익률 양호 — 수동 전환 후보`});else act.push({tag:modeTagHigh(mode),t:`'<b>${d.kw}</b>' 클릭당비용 +${Math.round(d.chg)}% 수익률 ${C(Math.round(d.roas))}% — 예산 축소 검토`});});}
   const rd=kwIns.filter(d=>t50.has(d.kw)&&Number(d.c_spend)>=10000&&Number(d.p_spend)>=5000).map(d=>{const cr=Number(d.c_spend)>0?Number(d.c_rev)/Number(d.c_spend)*100:0;const pr=Number(d.p_spend)>0?Number(d.p_rev)/Number(d.p_spend)*100:0;const cc=Number(d.c_clicks)>0?Number(d.c_spend)/Number(d.c_clicks):0;const pc=Number(d.p_clicks)>0?Number(d.p_spend)/Number(d.p_clicks):0;const cpcC=pc>0?((cc-pc)/pc*100):0;const cv=Number(d.c_clicks)>0?Number(d.c_orders)/Number(d.c_clicks)*100:0;const pv=Number(d.p_clicks)>0?Number(d.p_orders)/Number(d.p_clicks)*100:0;const cvrC=pv>0?((cv-pv)/pv*100):0;let tp='D';if(cpcC>15&&Math.abs(cvrC)<=10)tp='A';else if(Math.abs(cpcC)<=10&&cvrC<-15)tp='B';else if(cpcC>15&&cvrC<-15)tp='C';return{kw:d.kw,cr,pr,chgP:cr-pr,tp,isManu:d.is_manual,pc};}).filter(d=>d.chgP<-100).sort((a,b)=>a.chgP-b.chgP).slice(0,3);
-  rd.forEach(d=>{const tl=d.tp==='A'?'클릭당비용↑':d.tp==='B'?'CVR↓':d.tp==='C'?'복합':'기타';act.push({tag:modeTagHigh(mode),t:`'<b>${d.kw}</b>' 수익률 ${C(Math.round(d.pr))}%→${C(Math.round(d.cr))}% — <b>${tl}</b>`});});
+  rd.forEach(d=>{const tl=d.tp==='A'?'클릭당비용 상승형':d.tp==='B'?'CVR 하락형':d.tp==='C'?'복합형':'기타';let rec='';if(d.tp==='A')rec=d.isManu?'. 수동 입찰가 5~10% 하향 조정 테스트 권장':'. 클릭당비용 과다 — 수동 캠페인 전환 또는 예산 축소 검토';else if(d.tp==='B')rec='. 전환율 하락 — 상세페이지 점검, 경쟁사 프로모션/가격/리뷰 변동 확인';else if(d.tp==='C')rec='. 클릭당비용↑ + 전환율↓ 동시 발생 — 입찰가 조정 + 상세페이지 점검 병행';else rec='. 원인 복합적 — 캠페인 분석 탭에서 해당 키워드 상세 추이 확인';act.push({tag:modeTagHigh(mode),t:`'<b>${d.kw}</b>' 수익률 ${C(Math.round(d.pr))}%→${C(Math.round(d.cr))}% — <b>${tl}</b>${rec}`});});
   const cn=kwIns.filter(d=>t50.has(d.kw)&&!d.is_manual&&Number(d.c_clicks)>=30&&Number(d.c_spend)>0&&(Number(d.c_rev)/Number(d.c_spend)*100)>=800&&Number(d.c_rev)>=100000).map(d=>({kw:d.kw,roas:Number(d.c_spend)>0?Number(d.c_rev)/Number(d.c_spend)*100:0,rev:Number(d.c_rev),cpc:Number(d.c_clicks)>0?Number(d.c_spend)/Number(d.c_clicks):0})).sort((a,b)=>b.rev-a.rev).slice(0,3);
   if(cn.length)act.push({tag:'조정',t:`수동 확장 후보: ${cn.map(d=>`'<b>${d.kw}</b>'(${C(Math.round(d.roas))}%)`).join(', ')}`});}}
   const aRD=pD(aAgg.roas,aPrev.roas);if(aRD!==null&&aRD<-15)act.push({tag:modeTagHigh(mode),t:`매출최적화 수익률 ${Cp(aPrev.roas)}→${Cp(aAgg.roas)} — 저성과 키워드 재배분`});
