@@ -366,6 +366,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
     <div class="sub-date-badge" id="subBadge" style="display:none">서비스 기간: <b id="subExpDate">-</b></div>
     <div class="last-date" id="ldBadge" style="display:none">마지막: <b id="ldVal">-</b></div>
     <button class="theme-btn" id="tBtn" onclick="toggleTheme()">🌙</button>
+    <button class="theme-btn" onclick="refreshDash()" title="대시보드 새로고침">🔄</button>
     <input type="file" id="fileInput" accept=".xlsx,.xls" multiple style="display:none"/>
     <button class="btn btn-pr" onclick="document.getElementById('fileInput').click()">📂 파일 추가</button>
   </div>
@@ -1242,6 +1243,13 @@ function toggleTheme(){
   if(aF.length)renderMain();
 }
 
+// ════ 대시보드 새로고침 ════
+function refreshDash(){
+  window._mainNeedsRefresh=false;
+  _cpcDailyCache=null;_cpcTypeAggCache=null;_cpcTypePrevCache=null;
+  if(aF.length)renderMain();
+}
+
 // ════ 페이지 전환 ════
 function switchPage(pg,el){
   document.querySelectorAll('.nav-item').forEach(b=>b.classList.remove('on'));
@@ -1256,6 +1264,12 @@ function switchPage(pg,el){
   const titles={main:'성과 대시보드',camp:'캠페인 분석',cpc:'클릭당 비용 분석',report:'히스토리'};
   document.getElementById('pageTitle').textContent=titles[pg]||titles.main;
   
+  if(pg==='main'){
+    if(window._mainNeedsRefresh&&aF.length){
+      window._mainNeedsRefresh=false;
+      try{renderMain();}catch(e){console.error('renderMain 오류:',e);}
+    }
+  }
   if(pg==='camp'){
     const hasData=aF.length>0;
     document.getElementById('campEmpty').style.display=hasData?'none':'flex';
@@ -2685,7 +2699,7 @@ function renderH(page){
 let campP='7일',slideGr='일별',slideCampData=null,slideCampName='';
 let campRoasTargets=JSON.parse(localStorage.getItem('campRoasTargets')||'{}');
 function getCampTarget(name){return campRoasTargets[name]||500;}
-function setCampTarget(name,val){campRoasTargets[name]=val;localStorage.setItem('campRoasTargets',JSON.stringify(campRoasTargets));}
+function setCampTarget(name,val){campRoasTargets[name]=val;localStorage.setItem('campRoasTargets',JSON.stringify(campRoasTargets));window._mainNeedsRefresh=true;window._skipDetailScroll=true;renderCampPage();}
 
 // 공유 MIX 광고수익률 계산 함수
 async function calcMixRoas(period){
@@ -2740,9 +2754,10 @@ async function renderCampPage(){
   if(mixEl)mixEl.innerHTML=`MIX 목표 광고수익률: <b style="color:var(--accent)">${C(Math.round(mixTarget))}%</b> <span style="font-size:10px;color:var(--text3)">(캠페인별 목표의 광고비 가중평균)</span>`;
   const selName=slideCampName;
   document.querySelector('#campTbl thead').innerHTML=`<tr><th>캠페인명</th><th>노출수</th><th>클릭수</th><th>클릭률</th><th>클릭당비용</th><th>전환율</th><th>집행광고비</th><th>광고전환매출</th><th>광고수익률<br><span style="font-size:9px;color:var(--text3)">(${cmpL} 대비)</span></th><th>수익률 목표</th><th style="border-left:2px solid var(--border)">광고비 비중</th><th>매출액 비중</th></tr>`;
-  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()"><input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--accent3);border-radius:4px;background:rgba(124,106,247,.1);color:var(--accent3);font-size:11px;text-align:center;font-family:'DM Mono',monospace;font-weight:700" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value));renderCampPage()"/>%</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
+  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"><input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--accent3);border-radius:4px;background:rgba(124,106,247,.1);color:var(--accent3);font-size:11px;text-align:center;font-family:'DM Mono',monospace;font-weight:700" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value))"/>%</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
   await renderCampIns(tblData,globalT);
-  if(slideCampName)openCampDetail(slideCampName);
+  if(slideCampName&&!window._skipDetailScroll)openCampDetail(slideCampName);
+  window._skipDetailScroll=false;
 }
 async function openCampDetail(name){slideCampName=name;slideGr='일별';document.getElementById('campDetailArea').style.display='block';document.getElementById('campDetailTitle').textContent='📊 '+name;const rows=getRows();const{cur,prev,lbl}=getPer(rows,campP,'main');const cmpL=lbl.includes('vs')?lbl.split('vs')[1].trim():'이전 기간';document.getElementById('campDetailSub').textContent=`세부 캠페인 분석 · ${lbl}`;document.querySelectorAll('#campTbl tbody tr').forEach(tr=>{tr.style.background=tr.textContent.includes(name)?'rgba(61,142,248,.08)':'';});slideCampData=await rpc('get_camp_daily',{p_campaign:name,p_dates:cur});if(!slideCampData)slideCampData=[];const prevData=prev.length?await rpc('get_camp_daily',{p_campaign:name,p_dates:prev}):[];const s=slideCampData.reduce((a,r)=>a+Number(r.spend),0),rv=slideCampData.reduce((a,r)=>a+Number(r.rev),0),cl=slideCampData.reduce((a,r)=>a+Number(r.clicks),0),im=slideCampData.reduce((a,r)=>a+Number(r.imp),0);const roas=s>0?rv/s*100:0,cpc=cl>0?s/cl:0;const ps=(prevData||[]).reduce((a,r)=>a+Number(r.spend),0),prv=(prevData||[]).reduce((a,r)=>a+Number(r.rev),0),pcl=(prevData||[]).reduce((a,r)=>a+Number(r.clicks),0),pim=(prevData||[]).reduce((a,r)=>a+Number(r.imp),0);const pRoas=ps>0?prv/ps*100:0,pCpc=pcl>0?ps/pcl:0;
 document.getElementById('campDetailKpi').innerHTML=[{l:'노출수',v:fN(im)+'회',d:pD(im,pim),c:'c1'},{l:'클릭당비용',v:'₩'+C(Math.round(cpc)),d:pD(cpc,pCpc),c:'c2',inv:true},{l:'광고비',v:fW(s),d:pD(s,ps),c:'c3'},{l:'전환매출',v:fW(rv),d:pD(rv,prv),c:'c4'},{l:'광고수익률',v:C(Math.round(roas))+'%',d:pD(roas,pRoas),c:'c5'}].map(k=>{const tag=k.d===null?'<span class="tag tneu">-</span>':k.inv?dTcpc(k.d):dT(k.d);return`<div class="kpi ${k.c}" style="animation:none;opacity:1;transform:none"><div class="kpi-lbl">${k.l}</div><div class="kpi-val">${k.v}</div><div class="kpi-cmp">${tag}<span style="font-size:10px;color:var(--text3);margin-left:3px">${cmpL}</span></div></div>`;}).join('');
