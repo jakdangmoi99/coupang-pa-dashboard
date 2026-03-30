@@ -20,8 +20,8 @@ CREATE TABLE IF NOT EXISTS goldbox_snapshots (
   id BIGSERIAL PRIMARY KEY,
   product_id TEXT NOT NULL REFERENCES goldbox_products(product_id) ON DELETE CASCADE,
   crawled_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  original_price INTEGER DEFAULT 0,
-  sale_price INTEGER DEFAULT 0,
+  original_price BIGINT DEFAULT 0,
+  sale_price BIGINT DEFAULT 0,
   discount_rate INTEGER DEFAULT 0,
   sold_rate INTEGER DEFAULT 0
 );

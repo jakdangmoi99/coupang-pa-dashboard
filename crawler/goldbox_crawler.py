@@ -7,6 +7,7 @@
 
 import os
 import sys
+import re
 import time
 import json
 import random
@@ -68,7 +69,7 @@ def create_driver():
     return driver
 
 
-def scroll_to_load_all(driver, max_scrolls=20):
+def scroll_to_load_all(driver, max_scrolls=30):
     """페이지 끝까지 스크롤하여 모든 상품 로드"""
     last_height = driver.execute_script("return document.body.scrollHeight")
 
@@ -83,142 +84,11 @@ def scroll_to_load_all(driver, max_scrolls=20):
         last_height = new_height
 
 
-def parse_products(html):
-    """HTML에서 골드박스 상품 정보 파싱"""
-    soup = BeautifulSoup(html, "html.parser")
-    products = []
-
-    # 골드박스 상품 카드 선택자들 (쿠팡 구조 변경 대비 여러 패턴)
-    selectors = [
-        "ul.goldbox-product-list li",
-        "div.goldbox-item",
-        "li.baby-product",
-        "div[class*='goldbox'] li",
-        "ul[class*='product'] li.baby-product",
-        "div.unit-item",
-    ]
-
-    items = []
-    for selector in selectors:
-        items = soup.select(selector)
-        if items:
-            logger.info(f"선택자 '{selector}'로 {len(items)}개 상품 발견")
-            break
-
-    if not items:
-        # 폴백: 일반적인 상품 카드 패턴
-        items = soup.select("li[class*='product'], div[class*='item']")
-        if items:
-            logger.info(f"폴백 선택자로 {len(items)}개 요소 발견")
-
-    for item in items:
-        try:
-            product = parse_single_product(item)
-            if product and product.get("product_id"):
-                products.append(product)
-        except Exception as e:
-            logger.warning(f"상품 파싱 실패: {e}")
-            continue
-
-    return products
-
-
-def parse_single_product(item):
-    """단일 상품 카드에서 정보 추출"""
-    product = {}
-
-    # 상품 링크 + ID
-    link = item.select_one("a[href*='/products/'], a[href*='/vp/products/']")
-    if link:
-        href = link.get("href", "")
-        product["product_url"] = f"https://www.coupang.com{href}" if href.startswith("/") else href
-        # URL에서 product_id 추출
-        parts = href.split("/products/")
-        if len(parts) > 1:
-            pid = parts[1].split("?")[0].split("/")[0]
-            product["product_id"] = pid
-
-    if not product.get("product_id"):
-        # data-product-id 속성 확인
-        pid = item.get("data-product-id") or item.get("data-item-id")
-        if pid:
-            product["product_id"] = str(pid)
-        else:
-            return None
-
-    # 상품명
-    name_el = (
-        item.select_one("[class*='name'], [class*='title']") or
-        item.select_one("div.descriptions, span.descriptions") or
-        item.select_one("dd.descriptions")
-    )
-    product["product_name"] = name_el.get_text(strip=True) if name_el else ""
-
-    # 브랜드명
-    brand_el = item.select_one("[class*='brand']")
-    product["brand_name"] = brand_el.get_text(strip=True) if brand_el else ""
-
-    # 카테고리
-    cat_el = item.select_one("[class*='category'], [class*='type']")
-    product["category"] = cat_el.get_text(strip=True) if cat_el else ""
-
-    # 이미지
-    img = item.select_one("img")
-    if img:
-        product["image_url"] = img.get("src") or img.get("data-img-src") or ""
-        if product["image_url"].startswith("//"):
-            product["image_url"] = "https:" + product["image_url"]
-
-    # 가격 정보
-    product["original_price"] = extract_price(item, ["[class*='base-price']", "[class*='origin']", "del", "span.base-price"])
-    product["sale_price"] = extract_price(item, ["[class*='sale-price']", "[class*='discount']", "strong[class*='price']", "em.sale"])
-
-    # 할인율
-    discount_el = item.select_one("[class*='discount-rate'], [class*='discount-percentage'], span.discount-rate")
-    if discount_el:
-        text = discount_el.get_text(strip=True).replace("%", "").replace("-", "")
-        product["discount_rate"] = parse_int(text)
-    elif product.get("original_price") and product.get("sale_price") and product["original_price"] > 0:
-        product["discount_rate"] = round((1 - product["sale_price"] / product["original_price"]) * 100)
-    else:
-        product["discount_rate"] = 0
-
-    # 소진율
-    sold_el = item.select_one(
-        "[class*='sold-rate'], [class*='progress'], [class*='gauge'], "
-        "span.sold-rate, div.progress-bar"
-    )
-    if sold_el:
-        # 텍스트에서 숫자 추출
-        text = sold_el.get_text(strip=True).replace("%", "")
-        product["sold_rate"] = parse_int(text)
-        # style width로 소진율 추정
-        if not product.get("sold_rate"):
-            style = sold_el.get("style", "")
-            if "width" in style:
-                width_val = style.split("width")[1].split("%")[0].replace(":", "").strip()
-                product["sold_rate"] = parse_int(width_val)
-    else:
-        product["sold_rate"] = 0
-
-    return product
-
-
-def extract_price(item, selectors):
-    """여러 선택자로 가격 추출 시도"""
-    for sel in selectors:
-        el = item.select_one(sel)
-        if el:
-            text = el.get_text(strip=True).replace(",", "").replace("원", "")
-            val = parse_int(text)
-            if val > 0:
-                return val
-    return 0
-
-
-def parse_int(text):
-    """문자열에서 정수 추출"""
-    digits = "".join(c for c in str(text) if c.isdigit())
+def extract_number(text):
+    """문자열에서 숫자만 추출"""
+    if not text:
+        return 0
+    digits = re.sub(r'[^\d]', '', str(text))
     return int(digits) if digits else 0
 
 
@@ -247,7 +117,7 @@ def crawl_goldbox():
             for btn in close_btns[:3]:
                 try:
                     btn.click()
-                    time.sleep(0.5)
+                    time.sleep(0.3)
                 except Exception:
                     pass
         except Exception:
@@ -258,33 +128,199 @@ def crawl_goldbox():
 
         # HTML 파싱
         html = driver.page_source
-        products = parse_products(html)
+        soup = BeautifulSoup(html, "html.parser")
 
-        # 파싱 실패 시 디버깅용 HTML 일부 저장
+        # 디버깅: 페이지 구조 분석
+        logger.info(f"페이지 타이틀: {driver.title}")
+        all_links = soup.select("a[href*='/products/']")
+        logger.info(f"상품 링크 수: {len(all_links)}")
+
+        # 전체 클래스 덤프 (상위 구조 파악)
+        body = soup.find("body")
+        if body:
+            top_divs = body.find_all(["div", "ul", "section"], recursive=False)
+            for div in top_divs[:10]:
+                cls = div.get("class", [])
+                child_count = len(div.find_all(["li", "div", "a"], recursive=False))
+                if cls:
+                    logger.info(f"최상위 요소: <{div.name} class='{' '.join(cls)}'> 자식 {child_count}개")
+
+        # ── 전략 1: 상품 링크 기반 파싱 (가장 확실) ──
+        seen_ids = set()
+        for link in all_links:
+            href = link.get("href", "")
+
+            # product_id 추출
+            match = re.search(r'/products/(\d+)', href)
+            if not match:
+                continue
+            pid = match.group(1)
+            if pid in seen_ids:
+                continue
+            seen_ids.add(pid)
+
+            # 링크를 감싸는 상위 컨테이너 찾기
+            container = link
+            for _ in range(5):
+                parent = container.parent
+                if parent and parent.name in ['li', 'div', 'article']:
+                    # 컨테이너가 가격이나 이미지를 포함하면 이게 카드
+                    if parent.find("img") or parent.select_one("[class*='price']"):
+                        container = parent
+                        break
+                    container = parent
+                else:
+                    break
+
+            product = {
+                "product_id": pid,
+                "product_url": f"https://www.coupang.com{href}" if href.startswith("/") else href,
+            }
+
+            # 상품명: 링크 내부 텍스트 또는 컨테이너 내 텍스트
+            name_candidates = []
+            # 컨테이너 내 모든 텍스트 요소
+            for el in container.find_all(["span", "div", "p", "dd", "em", "strong"]):
+                cls = " ".join(el.get("class", []))
+                text = el.get_text(strip=True)
+                if text and len(text) > 5 and not re.match(r'^[\d,%원]+$', text):
+                    if any(k in cls.lower() for k in ["name", "title", "description", "product"]):
+                        name_candidates.insert(0, text)  # 우선순위 높음
+                    elif len(text) > 10:
+                        name_candidates.append(text)
+
+            product["product_name"] = name_candidates[0] if name_candidates else link.get_text(strip=True)[:100]
+
+            # 이미지
+            img = container.find("img")
+            if img:
+                src = img.get("src") or img.get("data-img-src") or img.get("data-src") or ""
+                if src.startswith("//"):
+                    src = "https:" + src
+                product["image_url"] = src
+            else:
+                product["image_url"] = ""
+
+            # 가격: 컨테이너 내 숫자 패턴 찾기
+            prices = []
+            for el in container.find_all(["span", "strong", "em", "del", "div"]):
+                cls = " ".join(el.get("class", []))
+                text = el.get_text(strip=True)
+                num = extract_number(text)
+                if 100 <= num <= 100000000:  # 100원 ~ 1억원
+                    is_original = any(k in cls.lower() for k in ["base", "origin", "before", "regular"]) or el.name == "del"
+                    is_sale = any(k in cls.lower() for k in ["sale", "discount", "final", "price-value"])
+                    prices.append({"value": num, "is_original": is_original, "is_sale": is_sale, "cls": cls})
+
+            if prices:
+                orig_prices = [p["value"] for p in prices if p["is_original"]]
+                sale_prices = [p["value"] for p in prices if p["is_sale"]]
+
+                if orig_prices:
+                    product["original_price"] = max(orig_prices)
+                if sale_prices:
+                    product["sale_price"] = min(sale_prices)
+
+                # 명시적 구분 못 한 경우: 큰 값=원가, 작은 값=할인가
+                if not orig_prices and not sale_prices and len(prices) >= 2:
+                    vals = sorted(set(p["value"] for p in prices), reverse=True)
+                    product["original_price"] = vals[0]
+                    product["sale_price"] = vals[1] if len(vals) > 1 else vals[0]
+                elif not orig_prices and sale_prices:
+                    product["original_price"] = product.get("sale_price", 0)
+                elif orig_prices and not sale_prices:
+                    product["sale_price"] = product.get("original_price", 0)
+
+            product.setdefault("original_price", 0)
+            product.setdefault("sale_price", 0)
+
+            # 할인율
+            discount_el = container.find(lambda tag: tag.name in ["span", "div", "em", "strong"] and
+                any(k in " ".join(tag.get("class", [])).lower() for k in ["discount", "rate", "percent", "badge"]))
+            if discount_el:
+                product["discount_rate"] = min(extract_number(discount_el.get_text()), 100)
+            elif product["original_price"] > 0 and product["sale_price"] > 0:
+                product["discount_rate"] = round((1 - product["sale_price"] / product["original_price"]) * 100)
+            else:
+                product["discount_rate"] = 0
+
+            # 소진율
+            sold_rate = 0
+            # style width 기반
+            progress = container.select_one("[class*='gauge'] [style*='width'], [class*='progress'] [style*='width'], [class*='sold'] [style*='width']")
+            if progress:
+                style = progress.get("style", "")
+                match = re.search(r'width:\s*([\d.]+)%', style)
+                if match:
+                    sold_rate = round(float(match.group(1)))
+
+            # 텍스트 기반
+            if not sold_rate:
+                sold_el = container.find(lambda tag: tag.name in ["span", "div", "em"] and
+                    any(k in " ".join(tag.get("class", [])).lower() for k in ["sold", "gauge", "progress", "qty"]))
+                if sold_el:
+                    sold_rate = min(extract_number(sold_el.get_text()), 100)
+
+            product["sold_rate"] = sold_rate
+
+            # 브랜드
+            brand_el = container.find(lambda tag: tag.name in ["span", "div", "em"] and
+                any(k in " ".join(tag.get("class", [])).lower() for k in ["brand"]))
+            product["brand_name"] = brand_el.get_text(strip=True) if brand_el else ""
+
+            # 카테고리
+            cat_el = container.find(lambda tag: tag.name in ["span", "div"] and
+                any(k in " ".join(tag.get("class", [])).lower() for k in ["category", "type", "badge-text"]))
+            product["category"] = cat_el.get_text(strip=True) if cat_el else ""
+
+            products.append(product)
+            logger.info(f"  상품 수집: {pid} | {product['product_name'][:30]} | {product['sale_price']}원 | 소진 {product['sold_rate']}%")
+
+        # ── 전략 2: JavaScript로 직접 추출 시도 ──
         if not products:
-            logger.warning("상품을 찾지 못했습니다. 페이지 구조 확인 필요")
-            # 디버깅: HTML 일부 출력
-            soup = BeautifulSoup(html, "html.parser")
-            body_classes = [tag.get("class", []) for tag in soup.find_all(True, limit=50)]
-            logger.info(f"페이지 상위 요소 클래스: {body_classes[:20]}")
+            logger.info("HTML 파싱 실패, JavaScript로 재시도")
+            try:
+                js_products = driver.execute_script("""
+                    var items = [];
+                    document.querySelectorAll('a[href*="/products/"]').forEach(function(a) {
+                        var m = a.href.match(/\\/products\\/(\\d+)/);
+                        if (!m) return;
+                        var card = a.closest('li') || a.closest('div');
+                        if (!card) return;
+                        var img = card.querySelector('img');
+                        var texts = Array.from(card.querySelectorAll('*')).map(function(e){return {t:e.textContent.trim(), c:e.className}});
+                        items.push({
+                            pid: m[1],
+                            href: a.href,
+                            img: img ? (img.src || img.dataset.imgSrc || '') : '',
+                            html: card.innerHTML.substring(0, 3000),
+                            texts: texts.slice(0, 30)
+                        });
+                    });
+                    return items;
+                """)
+                logger.info(f"JS로 {len(js_products or [])}개 요소 발견")
 
-            # 모든 링크에서 /products/ 패턴 찾기
-            all_links = soup.select("a[href*='/products/']")
-            logger.info(f"/products/ 링크 수: {len(all_links)}")
+                if js_products:
+                    # 첫 번째 아이템의 구조 로깅
+                    logger.info(f"샘플 데이터: {json.dumps(js_products[0].get('texts', [])[:10], ensure_ascii=False)[:500]}")
 
-            if all_links:
-                # 링크의 부모 요소를 기준으로 재파싱 시도
-                for link in all_links:
-                    parent = link.find_parent("li") or link.find_parent("div")
-                    if parent:
-                        p = parse_single_product(parent)
-                        if p and p.get("product_id"):
-                            products.append(p)
+            except Exception as e:
+                logger.error(f"JS 추출 실패: {e}")
 
         logger.info(f"총 {len(products)}개 상품 수집 완료")
 
+        # 디버깅용: 파싱 실패 시 HTML 저장
+        if len(products) < 5:
+            debug_path = os.path.join(os.path.dirname(__file__), "debug_page.html")
+            with open(debug_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            logger.info(f"디버깅용 HTML 저장: {debug_path}")
+
     except Exception as e:
         logger.error(f"크롤링 중 오류: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         driver.quit()
 
@@ -295,8 +331,6 @@ def save_to_supabase(products):
     """Supabase에 데이터 저장"""
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
         logger.error("Supabase 환경변수가 설정되지 않았습니다")
-        logger.info("SUPABASE_URL, SUPABASE_SERVICE_KEY 환경변수를 확인하세요")
-        # 로컬 테스트용: JSON으로 저장
         save_to_json(products)
         return
 
@@ -319,13 +353,11 @@ def save_to_supabase(products):
                 "last_seen_date": today,
             }
 
-            # 기존 상품인지 확인
             existing = supabase.table("goldbox_products").select("product_id").eq(
                 "product_id", p["product_id"]
             ).execute()
 
             if existing.data:
-                # 기존 상품: last_seen_date만 업데이트
                 supabase.table("goldbox_products").update({
                     "product_name": product_data["product_name"],
                     "brand_name": product_data["brand_name"],
@@ -334,7 +366,6 @@ def save_to_supabase(products):
                     "last_seen_date": today,
                 }).eq("product_id", p["product_id"]).execute()
             else:
-                # 신규 상품: first_seen_date 포함 삽입
                 product_data["first_seen_date"] = today
                 supabase.table("goldbox_products").insert(product_data).execute()
 
