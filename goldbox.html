@@ -50,8 +50,11 @@ a{color:inherit;text-decoration:none}
 .filter-input{flex:1;min-width:200px;padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;outline:none;transition:border-color .2s}
 .filter-input:focus{border-color:var(--accent)}
 .filter-select{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;outline:none;cursor:pointer;min-width:140px}
+.filter-date{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;outline:none;cursor:pointer}
 .sort-btn{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text2);font-size:13px;cursor:pointer;font-weight:600;transition:all .2s;white-space:nowrap}
 .sort-btn:hover,.sort-btn.on{border-color:var(--accent);color:var(--accent)}
+.view-btn{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text2);font-size:13px;cursor:pointer;font-weight:600;transition:all .2s;white-space:nowrap}
+.view-btn:hover,.view-btn.on{border-color:var(--accent2);color:var(--accent2)}
 
 /* Product Grid */
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:24px}
@@ -66,7 +69,7 @@ a{color:inherit;text-decoration:none}
 .card-origin{font-size:12px;color:var(--text3);text-decoration:line-through}
 .card-discount{background:var(--red);color:#fff;font-size:11px;font-weight:800;padding:2px 6px;border-radius:4px;position:absolute;top:10px;right:10px}
 
-/* Progress Bar (소진율) */
+/* Progress Bar */
 .sold-bar{margin-top:8px}
 .sold-bar .bar-bg{height:8px;background:var(--surf3);border-radius:4px;overflow:hidden}
 .sold-bar .bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
@@ -75,8 +78,30 @@ a{color:inherit;text-decoration:none}
 .bar-fill.mid{background:var(--yellow)}
 .bar-fill.high{background:linear-gradient(90deg,var(--orange),var(--red))}
 
-/* Category Badge */
-.card-cat{display:inline-block;font-size:10px;color:var(--text3);background:var(--surf2);padding:2px 8px;border-radius:4px;margin-bottom:6px}
+/* Delivery Badge */
+.card-delivery{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;margin-bottom:6px;font-weight:700}
+.card-delivery.rocket{background:rgba(61,142,248,.15);color:var(--accent)}
+.card-delivery.fresh{background:rgba(0,212,180,.15);color:var(--accent2)}
+.card-delivery.seller{background:rgba(124,106,247,.15);color:var(--accent3)}
+.card-delivery.normal{background:var(--surf2);color:var(--text3)}
+
+/* Table View */
+.product-table{width:100%;border-collapse:collapse;margin-bottom:24px;background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.product-table thead{background:var(--surf2)}
+.product-table th{padding:10px 12px;text-align:left;font-size:12px;font-weight:700;color:var(--text2);border-bottom:1px solid var(--border);white-space:nowrap}
+.product-table td{padding:10px 12px;font-size:13px;border-bottom:1px solid var(--border)}
+.product-table tbody tr{cursor:pointer;transition:background .15s}
+.product-table tbody tr:hover{background:var(--surf2)}
+.product-table .td-rank{font-weight:800;color:var(--accent);text-align:center;width:50px}
+.product-table .td-name{max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.product-table .td-price{text-align:right;font-family:monospace;white-space:nowrap}
+.product-table .td-rate{text-align:center;font-weight:700}
+.product-table .td-discount{color:var(--red)}
+.product-table .td-sold-low{color:var(--green)}
+.product-table .td-sold-mid{color:var(--yellow)}
+.product-table .td-sold-high{color:var(--red)}
+.product-table .td-delivery{white-space:nowrap}
+.table-wrapper{overflow-x:auto;border-radius:var(--radius)}
 
 /* Tab Content */
 .tab-content{display:none}
@@ -113,10 +138,6 @@ a{color:inherit;text-decoration:none}
 .spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
 @keyframes spin{to{transform:rotate(360deg)}}
 
-/* Back Link */
-.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--text3);font-size:13px;font-weight:600;margin-bottom:12px;transition:color .2s}
-.back-link:hover{color:var(--accent)}
-
 /* Responsive */
 @media(max-width:768px){
   .app{padding:12px}
@@ -131,6 +152,8 @@ a{color:inherit;text-decoration:none}
   .filters{flex-direction:column}
   .filter-input{min-width:100%}
   .brand-search-box{flex-direction:column}
+  .product-table{font-size:12px}
+  .product-table th,.product-table td{padding:8px 6px}
 }
 @media(max-width:400px){
   .grid{grid-template-columns:repeat(2,1fr);gap:8px}
@@ -181,13 +204,22 @@ a{color:inherit;text-decoration:none}
 
     <!-- Filters -->
     <div class="filters">
+      <input type="date" class="filter-date" id="dateFilter" onchange="onDateChange()">
       <input class="filter-input" id="searchInput" placeholder="상품명 또는 브랜드 검색..." oninput="filterProducts()">
-      <select class="filter-select" id="categoryFilter" onchange="filterProducts()">
-        <option value="">전체 카테고리</option>
+      <select class="filter-select" id="deliveryFilter" onchange="filterProducts()">
+        <option value="">전체 배송</option>
+        <option value="로켓배송">로켓배송</option>
+        <option value="로켓프레시">로켓프레시</option>
+        <option value="판매자로켓">판매자로켓</option>
+        <option value="일반택배">일반택배</option>
       </select>
+      <button class="sort-btn" data-sort="_index" onclick="setSort(this)">노출순</button>
       <button class="sort-btn on" data-sort="sold_rate" onclick="setSort(this)">소진율순</button>
       <button class="sort-btn" data-sort="discount_rate" onclick="setSort(this)">할인율순</button>
       <button class="sort-btn" data-sort="sale_price" onclick="setSort(this)">가격순</button>
+      <span style="border-left:1px solid var(--border);height:24px;margin:0 4px"></span>
+      <button class="view-btn on" data-view="card" onclick="setView(this)">카드뷰</button>
+      <button class="view-btn" data-view="table" onclick="setView(this)">테이블뷰</button>
     </div>
 
     <div id="productGrid" class="grid"></div>
@@ -196,7 +228,7 @@ a{color:inherit;text-decoration:none}
   <!-- Tab 2: 트렌드 -->
   <div class="tab-content" id="tab-trend">
     <div class="chart-section">
-      <div class="chart-title">카테고리별 상품 분포</div>
+      <div class="chart-title">배송유형별 상품 분포</div>
       <div class="chart-box"><canvas id="chartCategory"></canvas></div>
     </div>
     <div class="chart-row">
@@ -231,11 +263,17 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let allProducts=[];
 let currentSort='sold_rate';
 let currentSortDir='desc';
+let currentView='card';
 let charts={};
+let currentDate='';
 
 // ── 초기화 ──
 document.addEventListener('DOMContentLoaded',()=>{
   initTabs();
+  // 날짜 기본값: KST 오늘
+  const dateInput=document.getElementById('dateFilter');
+  currentDate=getKSTDate();
+  dateInput.value=currentDate;
   loadData();
 });
 
@@ -259,24 +297,28 @@ function getKSTDate(){
   return kst.toISOString().split('T')[0];
 }
 
+// ── 날짜 변경 ──
+function onDateChange(){
+  currentDate=document.getElementById('dateFilter').value;
+  loadData();
+}
+
 // ── 데이터 로드 ──
 async function loadData(){
   showLoading('productGrid');
 
   try{
-    // KST 기준 오늘 날짜
-    const today=getKSTDate();
-    console.log('조회 날짜(KST):',today);
+    const targetDate=currentDate||getKSTDate();
+    console.log('조회 날짜:',targetDate);
 
-    // 먼저 오늘 데이터 시도, 없으면 가장 최근 날짜
     let{data:products,error:pErr}=await sb
       .from('goldbox_products')
       .select('*')
-      .eq('last_seen_date',today);
+      .eq('last_seen_date',targetDate);
 
     if(pErr) throw pErr;
 
-    // 오늘 데이터 없으면 최신 날짜로 조회
+    // 해당 날짜 데이터 없으면 최신 날짜로 폴백
     if(!products||!products.length){
       const{data:latest}=await sb
         .from('goldbox_products')
@@ -286,6 +328,8 @@ async function loadData(){
       if(latest&&latest.length){
         const latestDate=latest[0].last_seen_date;
         console.log('최신 날짜로 폴백:',latestDate);
+        document.getElementById('dateFilter').value=latestDate;
+        currentDate=latestDate;
         const{data:p2,error:e2}=await sb
           .from('goldbox_products')
           .select('*')
@@ -300,7 +344,7 @@ async function loadData(){
       return;
     }
 
-    // 각 상품의 최신 스냅샷 가져오기
+    // 각 상품의 스냅샷 가져오기
     const ids=products.map(p=>p.product_id);
     const{data:snapshots,error:sErr}=await sb
       .from('goldbox_snapshots')
@@ -319,7 +363,7 @@ async function loadData(){
       if(!snapMap[s.product_id]) snapMap[s.product_id]=s;
     });
 
-    allProducts=products.map(p=>{
+    allProducts=products.map((p,idx)=>{
       const snap=snapMap[p.product_id]||{};
       return{
         ...p,
@@ -327,15 +371,14 @@ async function loadData(){
         sale_price:snap.sale_price||0,
         discount_rate:snap.discount_rate||0,
         sold_rate:snap.sold_rate||0,
-        crawled_at:snap.crawled_at||''
+        crawled_at:snap.crawled_at||'',
+        _index:snap.crawl_order||snap.id||idx+1,
+        delivery_type:p.delivery_type||''
       };
     });
 
     // 스냅샷 타임라인 버튼
     renderTimeline([...snapTimes].sort());
-
-    // 카테고리 필터 채우기
-    populateCategories();
 
     // 통계 업데이트
     updateStats(allProducts);
@@ -375,35 +418,27 @@ function updateStats(items){
   }
 }
 
-// ── 카테고리 필터 ──
-function populateCategories(){
-  const cats=[...new Set(allProducts.filter(p=>p.category).map(p=>p.category))].sort();
-  const sel=document.getElementById('categoryFilter');
-  sel.innerHTML='<option value="">전체 카테고리</option>';
-  cats.forEach(c=>{
-    const opt=document.createElement('option');
-    opt.value=c;opt.textContent=c;
-    sel.appendChild(opt);
-  });
-}
-
 // ── 필터 + 정렬 ──
 function filterProducts(){
   const q=document.getElementById('searchInput').value.toLowerCase();
-  const cat=document.getElementById('categoryFilter').value;
+  const delivery=document.getElementById('deliveryFilter').value;
 
   let filtered=allProducts.filter(p=>{
-    if(q&&!p.product_name.toLowerCase().includes(q)&&!p.brand_name.toLowerCase().includes(q)) return false;
-    if(cat&&p.category!==cat) return false;
+    if(q&&!p.product_name.toLowerCase().includes(q)&&!(p.brand_name||'').toLowerCase().includes(q)) return false;
+    if(delivery&&p.delivery_type!==delivery) return false;
     return true;
   });
 
-  filtered.sort((a,b)=>{
-    const va=a[currentSort]||0,vb=b[currentSort]||0;
-    return currentSortDir==='desc'?vb-va:va-vb;
-  });
+  if(currentSort==='_index'){
+    filtered.sort((a,b)=>currentSortDir==='asc'?b._index-a._index:a._index-b._index);
+  }else{
+    filtered.sort((a,b)=>{
+      const va=a[currentSort]||0,vb=b[currentSort]||0;
+      return currentSortDir==='desc'?vb-va:va-vb;
+    });
+  }
 
-  renderGrid(filtered);
+  renderProducts(filtered);
 }
 
 function setSort(btn){
@@ -414,32 +449,47 @@ function setSort(btn){
     currentSortDir=currentSortDir==='desc'?'asc':'desc';
   }else{
     currentSort=newSort;
-    currentSortDir='desc';
+    currentSortDir=newSort==='_index'?'desc':'desc';
   }
   filterProducts();
 }
 
-// ── 상품 그리드 렌더링 ──
-function renderGrid(items){
-  const grid=document.getElementById('productGrid');
+function setView(btn){
+  document.querySelectorAll('.view-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  currentView=btn.dataset.view;
+  filterProducts();
+}
+
+// ── 렌더링 분기 ──
+function renderProducts(items){
+  const container=document.getElementById('productGrid');
   if(!items.length){
     showEmpty('productGrid','검색 결과가 없습니다','다른 키워드로 검색해보세요');
     return;
   }
-  grid.innerHTML=items.map(p=>cardHTML(p)).join('');
+  if(currentView==='table'){
+    container.className='';
+    container.innerHTML=renderTable(items);
+  }else{
+    container.className='grid';
+    container.innerHTML=items.map(p=>cardHTML(p)).join('');
+  }
 }
 
+// ── 카드 렌더링 ──
 function cardHTML(p){
   const soldClass=p.sold_rate<50?'low':p.sold_rate<80?'mid':'high';
   const price=p.sale_price?p.sale_price.toLocaleString()+'원':'가격 정보 없음';
   const origPrice=p.original_price?p.original_price.toLocaleString()+'원':'';
   const imgSrc=p.image_url||'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="%23122238"/></svg>';
+  const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
 
   return `<div class="card" onclick="openProduct('${p.product_url||''}')">
     ${p.discount_rate?`<span class="card-discount">${p.discount_rate}%</span>`:''}
     <img class="card-img" src="${imgSrc}" alt="${esc(p.product_name)}" loading="lazy" onerror="this.style.display='none'">
     <div class="card-body">
-      ${p.category?`<span class="card-cat">${esc(p.category)}</span>`:''}
+      ${p.delivery_type?`<span class="card-delivery ${deliveryCls}">${esc(p.delivery_type)}</span>`:''}
       ${p.brand_name?`<div class="card-brand">${esc(p.brand_name)}</div>`:''}
       <div class="card-name">${esc(p.product_name)}</div>
       <div class="card-prices">
@@ -452,6 +502,31 @@ function cardHTML(p){
       </div>
     </div>
   </div>`;
+}
+
+// ── 테이블 렌더링 ──
+function renderTable(items){
+  const rows=items.map((p,i)=>{
+    const soldClass=p.sold_rate<50?'td-sold-low':p.sold_rate<80?'td-sold-mid':'td-sold-high';
+    const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
+    return `<tr onclick="openProduct('${p.product_url||''}')">
+      <td class="td-rank">${i+1}</td>
+      <td>${p.brand_name?esc(p.brand_name):'-'}</td>
+      <td class="td-name" title="${esc(p.product_name)}">${esc(p.product_name)}</td>
+      <td class="td-price">${p.original_price?p.original_price.toLocaleString()+'원':'-'}</td>
+      <td class="td-price">${p.sale_price?p.sale_price.toLocaleString()+'원':'-'}</td>
+      <td class="td-rate td-discount">${p.discount_rate?p.discount_rate+'%':'-'}</td>
+      <td class="td-rate ${soldClass}">${p.sold_rate}%</td>
+      <td class="td-delivery"><span class="card-delivery ${deliveryCls}">${p.delivery_type||'-'}</span></td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="table-wrapper"><table class="product-table">
+    <thead><tr>
+      <th>순번</th><th>브랜드</th><th>제품명</th><th>정상가</th><th>할인가</th><th>할인율</th><th>소진율</th><th>배송</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
 }
 
 function openProduct(url){
@@ -473,7 +548,6 @@ async function loadSnapshot(btn,timeKey){
   document.querySelectorAll('.snap-btn').forEach(b=>b.classList.remove('on'));
   btn.classList.add('on');
 
-  const today=new Date().toISOString().split('T')[0];
   const{data:snapshots}=await sb
     .from('goldbox_snapshots')
     .select('*')
@@ -490,7 +564,8 @@ async function loadSnapshot(btn,timeKey){
     const snap=snapMap[p.product_id];
     if(snap){
       return{...p,original_price:snap.original_price,sale_price:snap.sale_price,
-        discount_rate:snap.discount_rate,sold_rate:snap.sold_rate,crawled_at:snap.crawled_at};
+        discount_rate:snap.discount_rate,sold_rate:snap.sold_rate,crawled_at:snap.crawled_at,
+        _index:snap.crawl_order||snap.id||p._index};
     }
     return p;
   });
@@ -502,21 +577,20 @@ async function loadSnapshot(btn,timeKey){
 // ── 트렌드 차트 ──
 async function loadTrendCharts(){
   try{
-    // 최근 30일 데이터
     const since=new Date();
     since.setDate(since.getDate()-30);
     const sinceStr=since.toISOString();
 
-    // 카테고리 분포 (오늘)
-    const catCount={};
+    // 배송유형 분포
+    const deliveryCount={};
     allProducts.forEach(p=>{
-      const cat=p.category||'미분류';
-      catCount[cat]=(catCount[cat]||0)+1;
+      const dt=p.delivery_type||'미확인';
+      deliveryCount[dt]=(deliveryCount[dt]||0)+1;
     });
 
     renderChart('chartCategory','doughnut',{
-      labels:Object.keys(catCount),
-      datasets:[{data:Object.values(catCount),
+      labels:Object.keys(deliveryCount),
+      datasets:[{data:Object.values(deliveryCount),
         backgroundColor:['#3d8ef8','#00d4b4','#7c6af7','#ffbe3d','#ff4466','#ff8c42','#00e09a','#a78bfa','#f472b6','#34d399']}]
     });
 
@@ -602,7 +676,6 @@ async function searchBrand(){
       return;
     }
 
-    // 브랜드별 통계
     const ids=products.map(p=>p.product_id);
     const{data:snaps}=await sb
       .from('goldbox_snapshots')

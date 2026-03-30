@@ -86,10 +86,19 @@ def extract_page_products(driver):
                 if (/^-?\\d{1,2}%$/.test(t)) discountRate = parseInt(t.replace(/[^\\d]/g, ''));
             });
 
+            var deliveryType = '';
+            var cardText = card.innerText || '';
+            if (cardText.indexOf('로켓프레시') !== -1) deliveryType = '로켓프레시';
+            else if (cardText.indexOf('로켓와우') !== -1) deliveryType = '로켓배송';
+            else if (cardText.indexOf('로켓배송') !== -1) deliveryType = '로켓배송';
+            else if (cardText.indexOf('판매자로켓') !== -1 || cardText.indexOf('로켓그로스') !== -1) deliveryType = '판매자로켓';
+            else deliveryType = '일반택배';
+
             results.push({
                 pid: m[1], href: href, img: imgSrc,
                 name: lines.find(function(l) { return l.length > 5 && !/^[\\d,%원\\s]+$/.test(l); }) || '',
-                prices: prices, soldRate: soldRate, discountRate: discountRate
+                prices: prices, soldRate: soldRate, discountRate: discountRate,
+                deliveryType: deliveryType
             });
         });
         return results;
@@ -148,6 +157,7 @@ def crawl():
                     "sale_price": sale,
                     "discount_rate": min(discount, 100),
                     "sold_rate": item.get("soldRate", 0),
+                    "delivery_type": item.get("deliveryType", ""),
                     "brand_name": "",
                     "category": "",
                 })
@@ -224,19 +234,21 @@ def save_to_supabase(products):
     today = datetime.now(KST).strftime("%Y-%m-%d")
     ok = 0
 
-    for p in products:
+    for idx, p in enumerate(products):
         try:
             existing = supabase.table("goldbox_products").select("product_id").eq("product_id", p["product_id"]).execute()
             if existing.data:
                 supabase.table("goldbox_products").update({
                     "product_name": p["product_name"], "brand_name": p["brand_name"],
-                    "category": p["category"], "image_url": p["image_url"], "last_seen_date": today,
+                    "category": p["category"], "image_url": p["image_url"],
+                    "delivery_type": p.get("delivery_type", ""), "last_seen_date": today,
                 }).eq("product_id", p["product_id"]).execute()
             else:
                 supabase.table("goldbox_products").insert({
                     "product_id": p["product_id"], "product_name": p["product_name"],
                     "brand_name": p["brand_name"], "category": p["category"],
                     "image_url": p["image_url"], "product_url": p["product_url"],
+                    "delivery_type": p.get("delivery_type", ""),
                     "first_seen_date": today, "last_seen_date": today,
                 }).execute()
 
@@ -244,6 +256,7 @@ def save_to_supabase(products):
                 "product_id": p["product_id"], "crawled_at": now,
                 "original_price": p["original_price"], "sale_price": p["sale_price"],
                 "discount_rate": p["discount_rate"], "sold_rate": p["sold_rate"],
+                "crawl_order": idx + 1,
             }).execute()
             ok += 1
         except Exception as e:
