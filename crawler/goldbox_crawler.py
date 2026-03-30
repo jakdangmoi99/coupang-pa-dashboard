@@ -1,7 +1,7 @@
 """
 쿠팡 골드박스 크롤러
-- Selenium으로 골드박스 페이지 로드 + 네트워크 API 캡처
-- 상품 정보 + 소진율 수집
+- 쿠팡 메인 → 골드박스 자연스러운 이동 (봇 감지 우회)
+- 네트워크 API 캡처 + HTML 파싱
 - Supabase에 저장
 """
 
@@ -25,26 +25,17 @@ from bs4 import BeautifulSoup
 from fake_useragent import UserAgent
 from supabase import create_client
 
-# ── 로깅 설정 ──
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
 logger = logging.getLogger(__name__)
 
-# ── 환경변수 ──
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
-GOLDBOX_URL = "https://www.coupang.com/np/goldbox"
-
-# ── 한국 시간 ──
 KST = timezone(timedelta(hours=9))
 
 
 def create_driver():
-    """Headless Chrome 드라이버 생성 (네트워크 로그 활성화)"""
-    ua = UserAgent()
+    """실제 브라우저처럼 보이는 Chrome 설정"""
+    ua = UserAgent(browsers=["chrome"], os=["linux"])
     user_agent = ua.random
 
     options = Options()
@@ -55,264 +46,335 @@ def create_driver():
     options.add_argument("--window-size=1920,1080")
     options.add_argument(f"--user-agent={user_agent}")
     options.add_argument("--disable-blink-features=AutomationControlled")
-    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_argument("--lang=ko-KR")
+    options.add_argument("--accept-lang=ko-KR,ko;q=0.9,en-US;q=0.8")
+    options.add_experimental_option("excludeSwitches", ["enable-automation", "enable-logging"])
     options.add_experimental_option("useAutomationExtension", False)
-
-    # 네트워크 로그 캡처
     options.set_capability("goog:loggingPrefs", {"performance": "ALL"})
 
     service = Service(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
+    # 자동화 탐지 우회
     driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
-        "source": "Object.defineProperty(navigator, 'webdriver', {get: () => undefined})"
+        "source": """
+            Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+            Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+            Object.defineProperty(navigator, 'languages', {get: () => ['ko-KR', 'ko', 'en-US', 'en']});
+            window.chrome = {runtime: {}};
+            Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 0});
+        """
     })
-
-    # Network tracking 활성화
     driver.execute_cdp_cmd("Network.enable", {})
+    driver.execute_cdp_cmd("Network.setExtraHTTPHeaders", {
+        "headers": {
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+        }
+    })
 
     return driver
 
 
+def human_scroll(driver):
+    """사람처럼 자연스럽게 스크롤"""
+    total_height = driver.execute_script("return document.body.scrollHeight")
+    position = 0
+    while position < total_height:
+        scroll_amount = random.randint(300, 700)
+        position += scroll_amount
+        driver.execute_script(f"window.scrollTo({{top: {position}, behavior: 'smooth'}});")
+        time.sleep(random.uniform(0.5, 1.5))
+        # 중간중간 멈춤 (읽는 척)
+        if random.random() < 0.3:
+            time.sleep(random.uniform(1, 3))
+        total_height = driver.execute_script("return document.body.scrollHeight")
+    logger.info("스크롤 완료")
+
+
 def extract_number(text):
-    """문자열에서 숫자만 추출"""
     if not text:
         return 0
     digits = re.sub(r'[^\d]', '', str(text))
     return int(digits) if digits else 0
 
 
-def scroll_and_wait(driver, max_scrolls=30):
-    """스크롤하면서 상품 로드 대기"""
-    last_height = driver.execute_script("return document.body.scrollHeight")
-    for i in range(max_scrolls):
-        driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-        time.sleep(random.uniform(2, 4))
-        new_height = driver.execute_script("return document.body.scrollHeight")
-        if new_height == last_height:
-            logger.info(f"스크롤 완료 ({i+1}회)")
-            break
-        last_height = new_height
-    # 상단으로 돌아가서 다시 천천히 스크롤 (lazy load 트리거)
-    driver.execute_script("window.scrollTo(0, 0);")
-    time.sleep(1)
-    total_height = driver.execute_script("return document.body.scrollHeight")
-    for pos in range(0, total_height, 500):
-        driver.execute_script(f"window.scrollTo(0, {pos});")
-        time.sleep(0.3)
+def warm_up(driver):
+    """쿠팡 메인 페이지 방문하여 쿠키/세션 확보"""
+    logger.info("쿠팡 메인 페이지 방문 (쿠키 획득)")
+    driver.get("https://www.coupang.com")
+    time.sleep(random.uniform(3, 5))
+
+    # 쿠키 동의 팝업 처리
+    try:
+        for sel in ["#cookieAcceptBtn", "[class*='cookie'] button", "[class*='consent'] button"]:
+            btns = driver.find_elements(By.CSS_SELECTOR, sel)
+            for btn in btns:
+                try:
+                    btn.click()
+                    time.sleep(0.5)
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    # 메인 페이지 살짝 스크롤 (사람 흉내)
+    for _ in range(3):
+        driver.execute_script(f"window.scrollBy(0, {random.randint(200, 500)});")
+        time.sleep(random.uniform(0.5, 1))
+
+    title = driver.title
+    logger.info(f"메인 페이지 타이틀: {title}")
+
+    cookies = driver.get_cookies()
+    logger.info(f"쿠키 {len(cookies)}개 획득")
+
+    return "Access Denied" not in title
 
 
-def capture_api_data(driver):
-    """네트워크 로그에서 골드박스 API 응답 데이터 추출"""
-    api_products = []
+def navigate_to_goldbox(driver):
+    """메인 → 골드박스 자연스럽게 이동"""
+    time.sleep(random.uniform(2, 4))
 
+    # 방법 1: 골드박스 링크 직접 클릭
+    try:
+        gb_link = driver.find_element(By.CSS_SELECTOR, "a[href*='goldbox']")
+        gb_link.click()
+        logger.info("골드박스 링크 클릭으로 이동")
+        time.sleep(random.uniform(3, 5))
+        return True
+    except Exception:
+        pass
+
+    # 방법 2: JS로 이동 (referrer 유지)
+    logger.info("골드박스 URL로 직접 이동")
+    driver.execute_script("window.location.href = 'https://www.coupang.com/np/goldbox';")
+    time.sleep(random.uniform(4, 6))
+
+    title = driver.title
+    logger.info(f"골드박스 페이지 타이틀: {title}")
+
+    return "Access Denied" not in title and "Denied" not in title
+
+
+def capture_api_products(driver):
+    """네트워크 로그에서 상품 데이터 추출"""
+    products = []
     try:
         logs = driver.get_log("performance")
         for entry in logs:
             try:
                 msg = json.loads(entry["message"])["message"]
+                if msg["method"] != "Network.responseReceived":
+                    continue
+                url = msg["params"]["response"]["url"]
+                if not any(k in url.lower() for k in ["goldbox", "deal", "timesale", "product"]):
+                    continue
+                if msg["params"]["response"]["mimeType"] not in ["application/json", "text/json"]:
+                    continue
 
-                # Network.responseReceived 이벤트에서 goldbox 관련 API 찾기
-                if msg["method"] == "Network.responseReceived":
-                    url = msg["params"]["response"]["url"]
-                    if any(k in url.lower() for k in ["goldbox", "dealset", "deal", "timesale", "flash"]):
-                        request_id = msg["params"]["requestId"]
-                        logger.info(f"API 발견: {url[:150]}")
+                request_id = msg["params"]["requestId"]
+                logger.info(f"JSON API: {url[:150]}")
 
-                        try:
-                            body = driver.execute_cdp_cmd("Network.getResponseBody", {"requestId": request_id})
-                            data = json.loads(body.get("body", "{}"))
-                            logger.info(f"API 응답 키: {list(data.keys()) if isinstance(data, dict) else type(data)}")
+                body = driver.execute_cdp_cmd("Network.getResponseBody", {"requestId": request_id})
+                data = json.loads(body.get("body", "{}"))
 
-                            # 다양한 응답 구조 처리
-                            items = []
-                            if isinstance(data, list):
-                                items = data
-                            elif isinstance(data, dict):
-                                for key in ["products", "items", "deals", "data", "rData", "result"]:
-                                    if key in data:
-                                        candidate = data[key]
-                                        if isinstance(candidate, list):
-                                            items = candidate
-                                            break
-                                        elif isinstance(candidate, dict):
-                                            for k2 in ["products", "items", "deals", "list"]:
-                                                if k2 in candidate and isinstance(candidate[k2], list):
-                                                    items = candidate[k2]
-                                                    break
-
-                            if items:
-                                logger.info(f"API에서 {len(items)}개 아이템 발견")
-                                if items:
-                                    logger.info(f"샘플 키: {list(items[0].keys()) if isinstance(items[0], dict) else 'not dict'}")
-                                for item in items:
-                                    if not isinstance(item, dict):
-                                        continue
-                                    p = parse_api_product(item)
-                                    if p:
-                                        api_products.append(p)
-                        except Exception as e:
-                            logger.warning(f"API 응답 파싱 실패: {e}")
-
+                items = extract_items_from_json(data)
+                if items:
+                    logger.info(f"  → {len(items)}개 아이템")
+                    for item in items:
+                        p = parse_api_item(item)
+                        if p:
+                            products.append(p)
             except Exception:
                 continue
-
     except Exception as e:
-        logger.warning(f"네트워크 로그 분석 실패: {e}")
+        logger.warning(f"API 캡처 실패: {e}")
+    return products
 
-    return api_products
+
+def extract_items_from_json(data, depth=0):
+    """JSON에서 상품 리스트 재귀 탐색"""
+    if depth > 5:
+        return []
+    if isinstance(data, list) and data and isinstance(data[0], dict):
+        if any(k in data[0] for k in ["productId", "itemId", "productName", "salePrice", "basePrice"]):
+            return data
+    if isinstance(data, dict):
+        for key in ["products", "items", "deals", "data", "rData", "result", "list",
+                     "productList", "dealProducts", "goldboxProducts"]:
+            if key in data:
+                result = extract_items_from_json(data[key], depth + 1)
+                if result:
+                    return result
+        # 모든 value 탐색
+        for v in data.values():
+            if isinstance(v, (dict, list)):
+                result = extract_items_from_json(v, depth + 1)
+                if result:
+                    return result
+    return []
 
 
-def parse_api_product(item):
-    """API 응답의 상품 데이터 파싱 (다양한 키 대응)"""
+def parse_api_item(item):
+    """API 상품 아이템 파싱"""
+    if not isinstance(item, dict):
+        return None
     pid = str(item.get("productId") or item.get("itemId") or item.get("id") or item.get("dealId") or "")
-    if not pid:
+    if not pid or not pid.isdigit():
         return None
 
-    # 상품명
-    name = (item.get("productName") or item.get("name") or item.get("title") or
-            item.get("itemName") or item.get("dealName") or "")
-
-    # 이미지
-    img = item.get("productImage") or item.get("imageUrl") or item.get("image") or item.get("thumbnailUrl") or ""
-    if img and img.startswith("//"):
+    name = str(item.get("productName") or item.get("name") or item.get("title") or item.get("itemName") or "")
+    img = str(item.get("productImage") or item.get("imageUrl") or item.get("image") or item.get("thumbnailUrl") or "")
+    if img.startswith("//"):
         img = "https:" + img
 
-    # 가격
-    orig = item.get("basePrice") or item.get("originalPrice") or item.get("listPrice") or item.get("price") or 0
-    sale = item.get("salePrice") or item.get("discountPrice") or item.get("finalPrice") or item.get("couponPrice") or orig
-    if isinstance(orig, str):
-        orig = extract_number(orig)
-    if isinstance(sale, str):
-        sale = extract_number(sale)
+    orig = item.get("basePrice") or item.get("originalPrice") or item.get("listPrice") or 0
+    sale = item.get("salePrice") or item.get("discountPrice") or item.get("finalPrice") or orig
+    orig = extract_number(str(orig))
+    sale = extract_number(str(sale))
 
-    # 할인율
-    discount = item.get("discountRate") or item.get("discountPercent") or item.get("discountRatio") or 0
-    if isinstance(discount, str):
-        discount = extract_number(discount)
-    if not discount and orig and sale and orig > sale:
+    discount = item.get("discountRate") or item.get("discountPercent") or 0
+    discount = extract_number(str(discount))
+    if not discount and orig > sale > 0:
         discount = round((1 - sale / orig) * 100)
 
-    # 소진율
-    sold = item.get("soldRate") or item.get("soldPercent") or item.get("soldOut") or item.get("progressRate") or 0
-    if isinstance(sold, str):
-        sold = extract_number(sold)
+    sold = item.get("soldRate") or item.get("soldPercent") or item.get("progressRate") or 0
+    sold = extract_number(str(sold))
     if sold > 100:
         sold = 0
 
-    # URL
-    url = item.get("productUrl") or item.get("url") or item.get("landingUrl") or ""
+    url = str(item.get("productUrl") or item.get("url") or item.get("landingUrl") or "")
     if url and not url.startswith("http"):
         url = f"https://www.coupang.com{url}"
     if not url:
         url = f"https://www.coupang.com/vp/products/{pid}"
 
-    # 브랜드, 카테고리
-    brand = item.get("brandName") or item.get("brand") or ""
-    category = item.get("categoryName") or item.get("category") or item.get("categoryTitle") or ""
-
     return {
         "product_id": pid,
-        "product_name": str(name),
-        "image_url": str(img),
-        "product_url": str(url),
-        "original_price": int(orig) if orig else 0,
-        "sale_price": int(sale) if sale else 0,
-        "discount_rate": min(int(discount), 100) if discount else 0,
-        "sold_rate": int(sold),
-        "brand_name": str(brand),
-        "category": str(category),
+        "product_name": name,
+        "image_url": img,
+        "product_url": url,
+        "original_price": orig,
+        "sale_price": sale,
+        "discount_rate": min(discount, 100),
+        "sold_rate": sold,
+        "brand_name": str(item.get("brandName") or item.get("brand") or ""),
+        "category": str(item.get("categoryName") or item.get("category") or ""),
     }
 
 
-def parse_html_products(html):
-    """HTML에서 상품 파싱 (폴백)"""
-    soup = BeautifulSoup(html, "html.parser")
+def parse_html_products(driver):
+    """Selenium으로 DOM 직접 탐색하여 상품 추출"""
     products = []
-    seen = set()
 
-    for link in soup.select("a[href*='/products/']"):
-        href = link.get("href", "")
-        match = re.search(r'/products/(\d+)', href)
-        if not match:
-            continue
-        pid = match.group(1)
-        if pid in seen:
-            continue
-        seen.add(pid)
+    try:
+        # JS로 모든 상품 카드 정보 한번에 추출
+        js_products = driver.execute_script("""
+            var results = [];
+            var seen = {};
 
-        container = link
-        for _ in range(6):
-            parent = container.parent
-            if parent and parent.name in ['li', 'div', 'article', 'section']:
-                if parent.find("img") and len(parent.get_text(strip=True)) > 20:
-                    container = parent
-                    break
-                container = parent
-            else:
-                break
+            // 모든 상품 링크 수집
+            document.querySelectorAll('a').forEach(function(a) {
+                var href = a.href || '';
+                var m = href.match(/\\/products\\/(\\d+)/);
+                if (!m || seen[m[1]]) return;
+                seen[m[1]] = true;
 
-        product = {
-            "product_id": pid,
-            "product_url": f"https://www.coupang.com{href}" if href.startswith("/") else href,
-            "product_name": "",
-            "image_url": "",
-            "original_price": 0,
-            "sale_price": 0,
-            "discount_rate": 0,
-            "sold_rate": 0,
-            "brand_name": "",
-            "category": "",
-        }
+                // 상위 카드 컨테이너 찾기
+                var card = a;
+                for (var i = 0; i < 8; i++) {
+                    if (!card.parentElement) break;
+                    card = card.parentElement;
+                    if (card.querySelector('img') && card.offsetHeight > 100) break;
+                }
 
-        # 이름
-        for sel in ["[class*='name']", "[class*='title']", "[class*='description']"]:
-            el = container.select_one(sel)
-            if el and len(el.get_text(strip=True)) > 3:
-                product["product_name"] = el.get_text(strip=True)[:200]
-                break
-        if not product["product_name"]:
-            product["product_name"] = link.get_text(strip=True)[:200]
+                var img = card.querySelector('img');
+                var imgSrc = img ? (img.src || img.dataset.imgSrc || img.dataset.src || '') : '';
 
-        # 이미지
-        img = container.find("img")
-        if img:
-            src = img.get("src") or img.get("data-img-src") or img.get("data-src") or ""
-            if src.startswith("//"):
-                src = "https:" + src
-            product["image_url"] = src
+                // 텍스트 수집
+                var allText = card.innerText || '';
+                var lines = allText.split('\\n').filter(function(l) { return l.trim().length > 0; });
 
-        # 가격
-        for el in container.find_all(["span", "strong", "em", "del"]):
-            text = el.get_text(strip=True)
-            num = extract_number(text)
-            cls = " ".join(el.get("class", [])).lower()
-            if 100 <= num <= 100000000:
-                if "base" in cls or "origin" in cls or el.name == "del":
-                    product["original_price"] = num
-                elif "sale" in cls or "final" in cls:
-                    product["sale_price"] = num
-                elif not product["sale_price"]:
-                    product["sale_price"] = num
+                // 가격 패턴 찾기
+                var prices = [];
+                card.querySelectorAll('*').forEach(function(el) {
+                    var t = (el.textContent || '').trim();
+                    var numMatch = t.replace(/,/g, '').match(/^(\\d{3,10})원?$/);
+                    if (numMatch) prices.push(parseInt(numMatch[1]));
+                });
 
-        # 할인율
-        if product["original_price"] > product["sale_price"] > 0:
-            product["discount_rate"] = round((1 - product["sale_price"] / product["original_price"]) * 100)
+                // 소진율 (width style)
+                var soldRate = 0;
+                card.querySelectorAll('[style*="width"]').forEach(function(el) {
+                    var wm = (el.style.width || '').match(/(\\d+)/);
+                    if (wm) {
+                        var w = parseInt(wm[1]);
+                        if (w > 0 && w <= 100) soldRate = w;
+                    }
+                });
 
-        # 소진율 (width style)
-        progress = container.select_one("[style*='width']")
-        if progress:
-            m = re.search(r'width:\s*([\d.]+)%', progress.get("style", ""))
-            if m:
-                product["sold_rate"] = min(round(float(m.group(1))), 100)
+                // 할인율
+                var discountRate = 0;
+                card.querySelectorAll('*').forEach(function(el) {
+                    var t = (el.textContent || '').trim();
+                    if (t.match(/^\\d{1,2}%$/) || t.match(/^-?\\d{1,2}%$/)) {
+                        discountRate = parseInt(t.replace(/[^\\d]/g, ''));
+                    }
+                });
 
-        products.append(product)
+                results.push({
+                    pid: m[1],
+                    href: href,
+                    img: imgSrc,
+                    name: lines.length > 0 ? lines.find(function(l) { return l.length > 5 && !/^[\\d,%원\\s]+$/.test(l); }) || lines[0] : '',
+                    prices: prices,
+                    soldRate: soldRate,
+                    discountRate: discountRate,
+                    textDump: lines.slice(0, 10).join(' | ')
+                });
+            });
+            return results;
+        """)
+
+        logger.info(f"JS DOM에서 {len(js_products or [])}개 상품 추출")
+
+        for item in (js_products or []):
+            prices = sorted(set(item.get("prices", [])), reverse=True)
+            orig = prices[0] if prices else 0
+            sale = prices[1] if len(prices) > 1 else (prices[0] if prices else 0)
+
+            discount = item.get("discountRate", 0)
+            if not discount and orig > sale > 0:
+                discount = round((1 - sale / orig) * 100)
+
+            products.append({
+                "product_id": item["pid"],
+                "product_name": (item.get("name") or "")[:200],
+                "image_url": item.get("img", ""),
+                "product_url": item.get("href", ""),
+                "original_price": orig,
+                "sale_price": sale,
+                "discount_rate": min(discount, 100),
+                "sold_rate": item.get("soldRate", 0),
+                "brand_name": "",
+                "category": "",
+            })
+
+    except Exception as e:
+        logger.error(f"JS DOM 파싱 실패: {e}")
 
     return products
 
 
 def crawl_goldbox():
-    """메인 크롤링 함수"""
+    """메인 크롤링"""
     logger.info("=" * 50)
     logger.info("쿠팡 골드박스 크롤링 시작")
     logger.info("=" * 50)
@@ -321,119 +383,79 @@ def crawl_goldbox():
     products = []
 
     try:
-        logger.info(f"페이지 로드 중: {GOLDBOX_URL}")
-        driver.get(GOLDBOX_URL)
+        # Step 1: 메인 페이지 방문 → 쿠키 획득
+        if not warm_up(driver):
+            logger.error("메인 페이지 접근 실패")
+            # 직접 시도
+            driver.get("https://www.coupang.com/np/goldbox")
+            time.sleep(5)
 
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.TAG_NAME, "body"))
-        )
-        time.sleep(random.uniform(4, 6))
+        # Step 2: 골드박스로 이동
+        if not navigate_to_goldbox(driver):
+            logger.warning("골드박스 Access Denied — 재시도")
+            time.sleep(random.uniform(5, 10))
+            driver.delete_all_cookies()
+            if warm_up(driver):
+                navigate_to_goldbox(driver)
 
-        # 팝업 닫기
-        try:
-            for sel in ["[class*='close']", "button[class*='modal']", "[class*='popup'] button"]:
-                for btn in driver.find_elements(By.CSS_SELECTOR, sel)[:3]:
-                    try:
-                        btn.click()
-                        time.sleep(0.3)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+        title = driver.title
+        logger.info(f"최종 페이지 타이틀: {title}")
 
-        logger.info(f"페이지 타이틀: {driver.title}")
-
-        # 스크롤하여 모든 상품 로드
-        scroll_and_wait(driver)
-
-        # ── 전략 1: 네트워크 API 데이터 캡처 ──
-        products = capture_api_data(driver)
-        if products:
-            logger.info(f"API에서 {len(products)}개 상품 수집")
-
-        # ── 전략 2: JS로 페이지 내 데이터 추출 ──
-        if len(products) < 10:
-            logger.info("API 데이터 부족, JS로 페이지 데이터 추출 시도")
-            try:
-                js_data = driver.execute_script("""
-                    // window.__NEXT_DATA__ 또는 전역 상태에서 데이터 찾기
-                    var data = null;
-
-                    // Next.js 앱이면 __NEXT_DATA__에서
-                    if (window.__NEXT_DATA__) {
-                        data = JSON.stringify(window.__NEXT_DATA__);
-                    }
-
-                    // 전역 변수 탐색
-                    var globalData = {};
-                    ['__goldbox__', '__PRELOADED_STATE__', '__INITIAL_STATE__', 'goldboxData', 'dealData'].forEach(function(key) {
-                        if (window[key]) globalData[key] = window[key];
-                    });
-
-                    // 페이지 내 script 태그에서 JSON 데이터 추출
-                    var scripts = [];
-                    document.querySelectorAll('script:not([src])').forEach(function(s) {
-                        var t = s.textContent;
-                        if (t.length > 100 && (t.includes('product') || t.includes('goldbox') || t.includes('deal'))) {
-                            scripts.push(t.substring(0, 5000));
-                        }
-                    });
-
-                    return {
-                        nextData: data ? data.substring(0, 10000) : null,
-                        globalData: JSON.stringify(globalData).substring(0, 5000),
-                        scripts: scripts.slice(0, 5),
-                        productLinks: document.querySelectorAll('a[href*="/products/"]').length,
-                        allLinks: document.querySelectorAll('a[href]').length
-                    };
-                """)
-                logger.info(f"JS 탐색 결과: 상품링크 {js_data.get('productLinks')}개, 전체링크 {js_data.get('allLinks')}개")
-                if js_data.get("nextData"):
-                    logger.info(f"__NEXT_DATA__ 발견: {js_data['nextData'][:500]}")
-                if js_data.get("globalData") and len(js_data["globalData"]) > 5:
-                    logger.info(f"전역 데이터: {js_data['globalData'][:500]}")
-                for i, script in enumerate(js_data.get("scripts", [])):
-                    logger.info(f"Script[{i}]: {script[:300]}")
-            except Exception as e:
-                logger.warning(f"JS 데이터 추출 실패: {e}")
-
-        # ── 전략 3: HTML 파싱 (폴백) ──
-        if len(products) < 10:
-            logger.info("HTML 파싱 시도")
+        if "Access Denied" in title or "Denied" in title:
+            logger.error("쿠팡 접근 차단됨")
+            # 디버깅용
             html = driver.page_source
-            html_products = parse_html_products(html)
-            logger.info(f"HTML에서 {len(html_products)}개 상품 파싱")
+            debug_path = os.path.join(os.path.dirname(__file__), "debug_page.html")
+            with open(debug_path, "w", encoding="utf-8") as f:
+                f.write(html)
+            driver.quit()
+            sys.exit(1)
 
-            # API에서 못 얻은 상품만 추가
+        # Step 3: 스크롤
+        time.sleep(random.uniform(2, 4))
+        human_scroll(driver)
+        time.sleep(random.uniform(2, 3))
+
+        # Step 4: 데이터 수집
+        # 4a. API 캡처
+        products = capture_api_products(driver)
+        logger.info(f"API에서 {len(products)}개 수집")
+
+        # 4b. JS DOM 파싱
+        if len(products) < 10:
+            html_products = parse_html_products(driver)
             existing_ids = {p["product_id"] for p in products}
             for p in html_products:
                 if p["product_id"] not in existing_ids:
                     products.append(p)
+            logger.info(f"DOM 파싱 후 총 {len(products)}개")
 
-        # 디버깅용 HTML 저장 (상품 부족 시)
+        # 디버깅 (상품 부족 시)
         if len(products) < 10:
             html = driver.page_source
             debug_path = os.path.join(os.path.dirname(__file__), "debug_page.html")
             with open(debug_path, "w", encoding="utf-8") as f:
                 f.write(html)
-            logger.info(f"디버깅용 HTML 저장 ({len(html)} bytes)")
+            logger.info(f"디버깅 HTML 저장 ({len(html)} bytes)")
 
-            # 추가 디버깅: 페이지 내 모든 고유 클래스 출력
+            # 페이지 구조 로깅
             soup = BeautifulSoup(html, "html.parser")
+            logger.info(f"a 태그 수: {len(soup.find_all('a'))}")
+            logger.info(f"img 태그 수: {len(soup.find_all('img'))}")
+            logger.info(f"상품 링크: {len(soup.select('a[href*=products]'))}")
+
             classes = set()
-            for tag in soup.find_all(True):
+            for tag in soup.find_all(True, limit=200):
                 for c in tag.get("class", []):
-                    if any(k in c.lower() for k in ["product", "item", "deal", "gold", "card", "list", "grid"]):
-                        classes.add(f"{tag.name}.{c}")
-            logger.info(f"관련 클래스: {sorted(classes)[:30]}")
+                    classes.add(f"{tag.name}.{c}")
+            logger.info(f"클래스 샘플: {sorted(classes)[:40]}")
 
-        logger.info(f"총 {len(products)}개 상품 수집 완료")
-
+        logger.info(f"최종 수집: {len(products)}개")
         for p in products[:5]:
-            logger.info(f"  [{p['product_id']}] {p['product_name'][:30]} | {p['sale_price']}원 | 할인 {p['discount_rate']}% | 소진 {p['sold_rate']}%")
+            logger.info(f"  [{p['product_id']}] {p['product_name'][:30]} | {p['sale_price']}원 | 소진 {p['sold_rate']}%")
 
     except Exception as e:
-        logger.error(f"크롤링 중 오류: {e}")
+        logger.error(f"크롤링 오류: {e}")
         import traceback
         traceback.print_exc()
     finally:
@@ -443,89 +465,60 @@ def crawl_goldbox():
 
 
 def save_to_supabase(products):
-    """Supabase에 데이터 저장"""
     if not SUPABASE_URL or not SUPABASE_SERVICE_KEY:
-        logger.error("Supabase 환경변수가 설정되지 않았습니다")
+        logger.error("Supabase 환경변수 없음")
         save_to_json(products)
         return
 
     supabase = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
     now = datetime.now(KST).isoformat()
     today = datetime.now(KST).strftime("%Y-%m-%d")
-
-    success_count = 0
+    ok = 0
 
     for p in products:
         try:
-            product_data = {
-                "product_id": p["product_id"],
-                "product_name": p.get("product_name", ""),
-                "brand_name": p.get("brand_name", ""),
-                "category": p.get("category", ""),
-                "image_url": p.get("image_url", ""),
-                "product_url": p.get("product_url", ""),
-                "last_seen_date": today,
-            }
-
-            existing = supabase.table("goldbox_products").select("product_id").eq(
-                "product_id", p["product_id"]
-            ).execute()
-
+            existing = supabase.table("goldbox_products").select("product_id").eq("product_id", p["product_id"]).execute()
             if existing.data:
                 supabase.table("goldbox_products").update({
-                    "product_name": product_data["product_name"],
-                    "brand_name": product_data["brand_name"],
-                    "category": product_data["category"],
-                    "image_url": product_data["image_url"],
-                    "last_seen_date": today,
+                    "product_name": p["product_name"], "brand_name": p["brand_name"],
+                    "category": p["category"], "image_url": p["image_url"], "last_seen_date": today,
                 }).eq("product_id", p["product_id"]).execute()
             else:
-                product_data["first_seen_date"] = today
-                supabase.table("goldbox_products").insert(product_data).execute()
+                supabase.table("goldbox_products").insert({
+                    "product_id": p["product_id"], "product_name": p["product_name"],
+                    "brand_name": p["brand_name"], "category": p["category"],
+                    "image_url": p["image_url"], "product_url": p["product_url"],
+                    "first_seen_date": today, "last_seen_date": today,
+                }).execute()
 
-            snapshot_data = {
-                "product_id": p["product_id"],
-                "crawled_at": now,
-                "original_price": p.get("original_price", 0),
-                "sale_price": p.get("sale_price", 0),
-                "discount_rate": p.get("discount_rate", 0),
-                "sold_rate": p.get("sold_rate", 0),
-            }
-            supabase.table("goldbox_snapshots").insert(snapshot_data).execute()
-            success_count += 1
-
+            supabase.table("goldbox_snapshots").insert({
+                "product_id": p["product_id"], "crawled_at": now,
+                "original_price": p["original_price"], "sale_price": p["sale_price"],
+                "discount_rate": p["discount_rate"], "sold_rate": p["sold_rate"],
+            }).execute()
+            ok += 1
         except Exception as e:
-            logger.error(f"저장 실패 (product_id={p.get('product_id')}): {e}")
+            logger.error(f"저장 실패 ({p['product_id']}): {e}")
 
-    logger.info(f"Supabase 저장 완료: {success_count}/{len(products)}개 성공")
+    logger.info(f"Supabase 저장: {ok}/{len(products)}개 성공")
 
 
 def save_to_json(products):
-    """로컬 테스트용 JSON 저장"""
     now = datetime.now(KST)
-    filename = f"goldbox_{now.strftime('%Y%m%d_%H%M')}.json"
-    filepath = os.path.join(os.path.dirname(__file__), filename)
-
-    with open(filepath, "w", encoding="utf-8") as f:
-        json.dump({
-            "crawled_at": now.isoformat(),
-            "count": len(products),
-            "products": products
-        }, f, ensure_ascii=False, indent=2)
-
-    logger.info(f"로컬 JSON 저장: {filepath} ({len(products)}개)")
+    path = os.path.join(os.path.dirname(__file__), f"goldbox_{now.strftime('%Y%m%d_%H%M')}.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"crawled_at": now.isoformat(), "count": len(products), "products": products}, f, ensure_ascii=False, indent=2)
+    logger.info(f"JSON 저장: {path}")
 
 
 def main():
     products = crawl_goldbox()
-
     if products:
         save_to_supabase(products)
     else:
-        logger.warning("수집된 상품이 없습니다")
+        logger.warning("수집 상품 없음")
         sys.exit(1)
-
-    logger.info("크롤링 작업 완료")
+    logger.info("완료")
 
 
 if __name__ == "__main__":
