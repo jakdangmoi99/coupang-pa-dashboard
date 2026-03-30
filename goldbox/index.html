@@ -124,11 +124,6 @@ a{color:inherit;text-decoration:none}
 .brand-stat .bl{font-size:11px;color:var(--text3);margin-top:2px}
 .brand-products{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:16px}
 
-/* Snapshot Timeline */
-.timeline{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
-.snap-btn{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surf);color:var(--text2);font-size:12px;cursor:pointer;font-family:monospace;transition:all .2s}
-.snap-btn:hover,.snap-btn.on{border-color:var(--accent);color:var(--accent);background:rgba(61,142,248,.08)}
-
 /* Empty State */
 .empty{text-align:center;padding:60px 20px;color:var(--text3)}
 .empty .ico{font-size:48px;margin-bottom:12px}
@@ -201,9 +196,6 @@ a{color:inherit;text-decoration:none}
 
   <!-- Tab 1: 오늘의 골드박스 -->
   <div class="tab-content active" id="tab-today">
-    <!-- Snapshot Timeline -->
-    <div class="timeline" id="snapshotTimeline"></div>
-
     <!-- Filters -->
     <div class="filters">
       <input type="date" class="filter-date" id="dateFilter" onchange="onDateChange()">
@@ -216,6 +208,19 @@ a{color:inherit;text-decoration:none}
         <option value="로켓프레시">로켓프레시</option>
         <option value="판매자로켓">판매자로켓</option>
         <option value="일반배송">일반배송</option>
+      </select>
+      <select class="filter-select" id="categoryFilter" onchange="filterProducts()">
+        <option value="">전체 카테고리</option>
+        <option value="푸드">푸드</option>
+        <option value="신선식품">신선식품</option>
+        <option value="생활용품">생활용품</option>
+        <option value="가전/디지털">가전/디지털</option>
+        <option value="홈/키친">홈/키친</option>
+        <option value="패션/뷰티">패션/뷰티</option>
+        <option value="여행/티켓">여행/티켓</option>
+        <option value="펫/유아/레저">펫/유아/레저</option>
+        <option value="완구/문구/도서">완구/문구/도서</option>
+        <option value="기타">기타</option>
       </select>
       <button class="sort-btn" data-sort="_index" onclick="setSort(this)">노출순</button>
       <button class="sort-btn on" data-sort="sold_rate" onclick="setSort(this)">소진율순</button>
@@ -231,9 +236,15 @@ a{color:inherit;text-decoration:none}
 
   <!-- Tab 2: 트렌드 -->
   <div class="tab-content" id="tab-trend">
-    <div class="chart-section">
-      <div class="chart-title">배송유형별 상품 분포</div>
-      <div class="chart-box"><canvas id="chartCategory"></canvas></div>
+    <div class="chart-row">
+      <div class="chart-section">
+        <div class="chart-title">배송유형별 비율</div>
+        <div class="chart-box"><canvas id="chartDelivery"></canvas></div>
+      </div>
+      <div class="chart-section">
+        <div class="chart-title">카테고리별 분포</div>
+        <div class="chart-box"><canvas id="chartCategory"></canvas></div>
+      </div>
     </div>
     <div class="chart-row">
       <div class="chart-section">
@@ -429,10 +440,14 @@ async function loadData(){
       if(!brand&&prod.product_name){
         brand=prod.product_name.trim().split(/\s+/)[0]||'';
       }
+      // 카테고리 자동분류 (DB에 없으면 프론트에서 분류)
+      const category=prod.category||classifyCategory(prod.product_name||'');
+
       return{
         ...prod,
         product_id:pid,
         brand_name:brand,
+        category:category,
         original_price:snap.original_price||0,
         sale_price:snap.sale_price||0,
         discount_rate:snap.discount_rate||0,
@@ -444,9 +459,6 @@ async function loadData(){
         _timeLabels:sortedTimeLabels
       };
     });
-
-    // 스냅샷 타임라인 버튼
-    renderTimeline([...snapTimes].sort());
 
     // 통계 업데이트
     updateStats(allProducts);
@@ -491,9 +503,12 @@ function filterProducts(){
   const q=document.getElementById('searchInput').value.toLowerCase();
   const delivery=document.getElementById('deliveryFilter').value;
 
+  const cat=document.getElementById('categoryFilter').value;
+
   let filtered=allProducts.filter(p=>{
     if(q&&!p.product_name.toLowerCase().includes(q)&&!(p.brand_name||'').toLowerCase().includes(q)) return false;
     if(delivery&&p.delivery_type!==delivery) return false;
+    if(cat&&p.category!==cat) return false;
     return true;
   });
 
@@ -621,47 +636,6 @@ function openProduct(url){
   if(url) window.open(url,'_blank');
 }
 
-// ── 스냅샷 타임라인 ──
-function renderTimeline(times){
-  const container=document.getElementById('snapshotTimeline');
-  if(!times.length){container.innerHTML='';return;}
-  container.innerHTML=times.map((t,i)=>{
-    const d=new Date(t);
-    const label=d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Seoul'});
-    return `<button class="snap-btn${i===0?' on':''}" data-time="${t}" onclick="loadSnapshot(this,'${t}')">${label}</button>`;
-  }).join('');
-}
-
-async function loadSnapshot(btn,timeKey){
-  document.querySelectorAll('.snap-btn').forEach(b=>b.classList.remove('on'));
-  btn.classList.add('on');
-
-  const{data:snapshots}=await sb
-    .from('goldbox_snapshots')
-    .select('*')
-    .gte('crawled_at',timeKey+':00')
-    .lte('crawled_at',timeKey+':59')
-    .order('crawled_at',{ascending:false});
-
-  if(!snapshots) return;
-
-  const snapMap={};
-  snapshots.forEach(s=>{if(!snapMap[s.product_id]) snapMap[s.product_id]=s;});
-
-  allProducts=allProducts.map(p=>{
-    const snap=snapMap[p.product_id];
-    if(snap){
-      return{...p,original_price:snap.original_price,sale_price:snap.sale_price,
-        discount_rate:snap.discount_rate,sold_rate:snap.sold_rate,crawled_at:snap.crawled_at,
-        _index:snap.crawl_order||snap.id||p._index};
-    }
-    return p;
-  });
-
-  updateStats(allProducts);
-  filterProducts();
-}
-
 // ── 트렌드 차트 ──
 async function loadTrendCharts(){
   try{
@@ -669,17 +643,33 @@ async function loadTrendCharts(){
     since.setDate(since.getDate()-30);
     const sinceStr=since.toISOString();
 
-    // 배송유형 분포
+    const chartColors=['#3d8ef8','#00d4b4','#7c6af7','#ffbe3d','#ff4466','#ff8c42','#00e09a','#a78bfa','#f472b6','#34d399'];
+
+    // 배송유형 비율 차트
     const deliveryCount={};
     allProducts.forEach(p=>{
       const dt=p.delivery_type||'미확인';
       deliveryCount[dt]=(deliveryCount[dt]||0)+1;
     });
+    const total=allProducts.length;
+    const dlLabels=Object.keys(deliveryCount).map(k=>k+' ('+Math.round(deliveryCount[k]/total*100)+'%)');
+
+    renderChart('chartDelivery','doughnut',{
+      labels:dlLabels,
+      datasets:[{data:Object.values(deliveryCount),backgroundColor:chartColors}]
+    });
+
+    // 카테고리별 분포 차트
+    const catCount={};
+    allProducts.forEach(p=>{
+      const cat=p.category||'기타';
+      catCount[cat]=(catCount[cat]||0)+1;
+    });
+    const catLabels=Object.keys(catCount).map(k=>k+' ('+catCount[k]+'개)');
 
     renderChart('chartCategory','doughnut',{
-      labels:Object.keys(deliveryCount),
-      datasets:[{data:Object.values(deliveryCount),
-        backgroundColor:['#3d8ef8','#00d4b4','#7c6af7','#ffbe3d','#ff4466','#ff8c42','#00e09a','#a78bfa','#f472b6','#34d399']}]
+      labels:catLabels,
+      datasets:[{data:Object.values(catCount),backgroundColor:chartColors}]
     });
 
     // 일별 통계
@@ -805,6 +795,23 @@ async function searchBrand(){
   }catch(err){
     container.innerHTML=`<div class="empty"><div class="msg">오류: ${esc(err.message)}</div></div>`;
   }
+}
+
+// ── 카테고리 자동분류 (프론트엔드) ──
+function classifyCategory(name){
+  const n=(name||'').toLowerCase();
+  const match=(kws)=>kws.some(k=>n.includes(k));
+
+  if(match(['우유','계란','달걀','두부','요거트','치즈','버터','과일','채소','야채','고기','돼지','소고기','닭','연어','새우','김치','반찬','두유','샐러드'])) return '신선식품';
+  if(match(['커피','아메리카노','라떼','음료','콜라','사이다','과자','초콜릿','젤리','빵','케이크','라면','국수','파스타','소스','짜장','카레','만두','참치','햄','소시지','닭가슴살','프로틴','단백질','견과','아몬드','김','멸치','꿀','오일','비타민','영양제','유산균','콜라겐','홍삼','오메가','건강기능','밀키트','냉동','즉석','믹스','분말','티백','캡슐커피','원두','탄산','식이섬유','효소','루테인','시리얼','그래놀라'])) return '푸드';
+  if(match(['입장권','이용권','여행','호텔','숙박','리조트','항공','티켓','파크','놀이공원','워터파크','스파','골프'])) return '여행/티켓';
+  if(match(['노트북','태블릿','스마트폰','이어폰','헤드폰','블루투스','스피커','충전기','보조배터리','키보드','마우스','tv','모니터','냉장고','세탁기','에어컨','건조기','청소기','공기청정기','가습기','제습기','전자레인지','오븐','밥솥','정수기','led','카메라','usb','ssd','드라이기','면도기','전동칫솔','로봇청소기','안마기','마사지'])) return '가전/디지털';
+  if(match(['티셔츠','바지','원피스','자켓','코트','패딩','셔츠','양말','속옷','레깅스','운동화','신발','가방','백팩','지갑','모자','선글라스','시계','화장','스킨','로션','크림','세럼','에센스','파운데이션','립','클렌징','선크림','샴푸','컨디셔너','트리트먼트','바디워시','바디로션','향수','디퓨저','탈모','염색','네일','마스크팩','토너','앰플','미스트','설화수','아이크림','뷰티','beauty'])) return '패션/뷰티';
+  if(match(['강아지','고양이','펫','사료','고양이모래','모래','애견','기저귀','분유','젖병','유모차','카시트','아기','유아','캠핑','텐트','등산','자전거','킥보드','수영','낚시','운동기구','덤벨','요가','매트'])) return '펫/유아/레저';
+  if(match(['레고','블록','퍼즐','인형','피규어','보드게임','장난감','완구','색연필','스케치북','노트','펜','볼펜','도서','책','다이어리','스티커'])) return '완구/문구/도서';
+  if(match(['수건','타올','이불','베개','매트리스','침대','커튼','러그','수납','선반','행거','옷걸이','바구니','냄비','프라이팬','도마','그릇','접시','컵','텀블러','보온병','밀폐용기','지퍼백','건조대'])) return '홈/키친';
+  if(match(['세제','섬유유연제','청소','걸레','수세미','스펀지','휴지','화장지','물티슈','티슈','칫솔','치약','비누','핸드워시','방향제','탈취','우산','마스크','멀티탭'])) return '생활용품';
+  return '기타';
 }
 
 // ── 유틸 ──
