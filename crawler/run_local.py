@@ -111,9 +111,42 @@ def extract_page_products(driver):
             }
             if (!deliveryType) deliveryType = '일반배송';
 
+            // 제품명 추출 개선: 노이즈 라인 제거 후 가장 긴 한국어 라인 우선
+            var skipWords = ['R.LUX', 'R.LUX혜택', '남음', '판매됨', '로켓', '혜택'];
+            var candidates = lines.filter(function(l) {
+                var t = l.trim();
+                if (t.length < 5) return false;
+                if (/^[\\d,%원\\s.\\-]+$/.test(t)) return false;
+                if (/^\\d{1,2}:\\d{2}/.test(t)) return false;
+                if (/^\\d{1,3}%/.test(t)) return false;
+                for (var si = 0; si < skipWords.length; si++) {
+                    if (t === skipWords[si]) return false;
+                }
+                return true;
+            });
+            // 한국어 포함 + 콤마/단위 있는 라인 우선 (진짜 제품명)
+            var productName = '';
+            var brandFromCard = '';
+            var koreanLines = candidates.filter(function(l) { return /[가-힣]/.test(l); });
+            var specLines = koreanLines.filter(function(l) { return /[,]/.test(l) || /\\d+(ml|g|kg|L|개|매|입|정|포|ea)/i.test(l); });
+            if (specLines.length > 0) {
+                productName = specLines.reduce(function(a, b) { return a.length >= b.length ? a : b; });
+            } else if (koreanLines.length > 0) {
+                productName = koreanLines.reduce(function(a, b) { return a.length >= b.length ? a : b; });
+            } else if (candidates.length > 0) {
+                productName = candidates.reduce(function(a, b) { return a.length >= b.length ? a : b; });
+            }
+            // 브랜드 추출: 제품명 아닌 짧은 후보 라인 (영문 브랜드명 등)
+            candidates.forEach(function(l) {
+                if (l !== productName && !brandFromCard && l.length < 30) {
+                    brandFromCard = l.trim();
+                }
+            });
+
             results.push({
                 pid: m[1], href: href, img: imgSrc,
-                name: lines.find(function(l) { return l.length > 5 && !/^[\\d,%원\\s]+$/.test(l); }) || '',
+                name: productName,
+                brandFromCard: brandFromCard,
                 prices: prices, soldRate: soldRate, discountRate: discountRate,
                 deliveryType: deliveryType
             });
@@ -166,8 +199,10 @@ def crawl():
                     discount = round((1 - sale / orig) * 100)
 
                 name = (item.get("name") or "")[:200]
-                # 브랜드 추출: 상품명 첫 번째 단어
-                brand = name.strip().split()[0] if name.strip() else ""
+                # 브랜드: 카드에서 추출한 것 우선, 없으면 상품명 첫 단어
+                brand = item.get("brandFromCard", "")
+                if not brand:
+                    brand = name.strip().split()[0] if name.strip() else ""
 
                 products.append({
                     "product_id": pid,
