@@ -720,14 +720,17 @@ async function loadTrendCharts(){
 function renderChart(canvasId,type,data){
   if(charts[canvasId]) charts[canvasId].destroy();
   const ctx=document.getElementById(canvasId).getContext('2d');
+  const isDark=document.documentElement.dataset.theme!=='light';
+  const textColor=isDark?'#c8daf0':'#2d4a6a';
+  const gridColor=isDark?'rgba(26,48,80,.4)':'rgba(180,200,220,.4)';
   charts[canvasId]=new Chart(ctx,{
     type,data,
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:'var(--text2)',font:{family:'sans-serif'}}}},
+      plugins:{legend:{labels:{color:textColor,font:{family:'sans-serif',size:13},padding:16}}},
       scales:type==='line'?{
-        x:{ticks:{color:'#7a9abf',font:{family:'monospace',size:11}},grid:{color:'rgba(26,48,80,.3)'}},
-        y:{ticks:{color:'#7a9abf',font:{family:'monospace',size:11}},grid:{color:'rgba(26,48,80,.3)'}}
+        x:{ticks:{color:textColor,font:{family:'monospace',size:11}},grid:{color:gridColor}},
+        y:{ticks:{color:textColor,font:{family:'monospace',size:11}},grid:{color:gridColor}}
       }:undefined
     }
   });
