@@ -191,6 +191,7 @@ def extract_page_products(driver):
             // 1. 전체 HTML에서 로켓 관련 텍스트 검색 (img alt, title, 텍스트 모두 포함)
             var allText = cardText + ' ' + cardHTML;
             if (allText.indexOf('로켓프레시') !== -1) deliveryType = '로켓프레시';
+            else if (allText.indexOf('로켓직구') !== -1 || allText.indexOf('로켓 직구') !== -1) deliveryType = '로켓직구';
             else if (allText.indexOf('로켓내일') !== -1 || allText.indexOf('로켓 내일') !== -1) deliveryType = '로켓내일';
             else if (allText.indexOf('로켓와우') !== -1) deliveryType = '로켓와우';
             else if (allText.indexOf('로켓배송') !== -1) deliveryType = '로켓배송';
@@ -202,6 +203,7 @@ def extract_page_products(driver):
                     var alt = img.alt || '';
                     var src = img.src || '';
                     if (alt.indexOf('프레시') !== -1 || src.indexOf('fresh') !== -1) deliveryType = '로켓프레시';
+                    else if (alt.indexOf('직구') !== -1 || src.indexOf('global') !== -1 || src.indexOf('direct') !== -1) deliveryType = '로켓직구';
                     else if (alt.indexOf('내일') !== -1 || src.indexOf('tomorrow') !== -1) deliveryType = '로켓내일';
                     else if (alt.indexOf('와우') !== -1 || src.indexOf('wow') !== -1) deliveryType = '로켓와우';
                     else if (alt.indexOf('로켓') !== -1 || src.indexOf('rocket') !== -1) deliveryType = '로켓배송';

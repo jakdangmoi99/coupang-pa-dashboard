@@ -81,6 +81,7 @@ a{color:inherit;text-decoration:none}
 /* Delivery Badge */
 .card-delivery{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;margin-bottom:6px;font-weight:700}
 .card-delivery.rocket{background:rgba(61,142,248,.15);color:var(--accent)}
+.card-delivery.global{background:rgba(255,140,66,.15);color:var(--orange)}
 .card-delivery.tomorrow{background:rgba(0,224,154,.15);color:var(--green)}
 .card-delivery.wow{background:rgba(255,190,61,.15);color:var(--yellow)}
 .card-delivery.fresh{background:rgba(0,212,180,.15);color:var(--accent2)}
@@ -203,6 +204,7 @@ a{color:inherit;text-decoration:none}
       <select class="filter-select" id="deliveryFilter" onchange="filterProducts()">
         <option value="">전체 배송</option>
         <option value="로켓배송">로켓배송</option>
+        <option value="로켓직구">로켓직구</option>
         <option value="로켓내일">로켓내일</option>
         <option value="로켓와우">로켓와우</option>
         <option value="로켓프레시">로켓프레시</option>
@@ -566,7 +568,7 @@ function cardHTML(p){
   const price=p.sale_price?p.sale_price.toLocaleString()+'원':'가격 정보 없음';
   const origPrice=p.original_price?p.original_price.toLocaleString()+'원':'';
   const imgSrc=p.image_url||'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="%23122238"/></svg>';
-  const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓내일'?'tomorrow':p.delivery_type==='로켓와우'?'wow':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
+  const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓직구'?'global':p.delivery_type==='로켓내일'?'tomorrow':p.delivery_type==='로켓와우'?'wow':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
 
   return `<div class="card" onclick="openProduct('${p.product_url||''}')">
     ${p.discount_rate?`<span class="card-discount">${p.discount_rate}%</span>`:''}
@@ -595,7 +597,7 @@ function renderTable(items){
 
   const rows=items.map((p,i)=>{
     const soldClass=p.sold_rate<50?'td-sold-low':p.sold_rate<80?'td-sold-mid':'td-sold-high';
-    const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓내일'?'tomorrow':p.delivery_type==='로켓와우'?'wow':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
+    const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓직구'?'global':p.delivery_type==='로켓내일'?'tomorrow':p.delivery_type==='로켓와우'?'wow':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
 
     // 시간대별 소진율 셀
     let timeCells='';
