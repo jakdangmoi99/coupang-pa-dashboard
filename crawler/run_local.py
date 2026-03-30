@@ -115,30 +115,59 @@ def crawl():
             driver.quit()
             return []
 
-        # 2. 끝까지 스크롤하여 모든 상품 로드
-        for scroll_round in range(3):  # 3번 전체 스크롤 반복
-            prev_count = 0
-            stale = 0
-            for i in range(80):
-                driver.execute_script(f"window.scrollBy(0, {random.randint(300,600)});")
-                time.sleep(random.uniform(0.5, 1.2))
-                cur = driver.execute_script("return document.querySelectorAll('a[href*=\"/products/\"]').length")
-                if cur == prev_count:
-                    stale += 1
-                    if stale >= 8:
-                        break
-                else:
-                    stale = 0
-                    prev_count = cur
-            logger.info(f"스크롤 라운드 {scroll_round+1}: 상품 링크 {prev_count}개")
-            if prev_count >= 80:
-                break
-            # 맨 위로 갔다가 다시 스크롤 (추가 로드 트리거)
-            driver.execute_script("window.scrollTo(0, 0);")
-            time.sleep(random.uniform(1, 2))
+        # 2. 스크롤하면서 동시에 상품 수집 (가상 리스트 대응)
+        #    쿠팡은 화면 밖 상품을 DOM에서 제거하므로, 스크롤 중 수집해야 함
+        logger.info("스크롤하면서 상품 수집 시작")
+        scroll_pos = 0
+        max_height = driver.execute_script("return document.body.scrollHeight")
 
-        # 3. 상품 추출
-        js_items = extract_page_products(driver)
+        while scroll_pos < max_height + 3000:
+            # 현재 화면에 보이는 상품 수집
+            js_items = extract_page_products(driver)
+            new_in_batch = 0
+            for item in js_items:
+                pid = item["pid"]
+                if pid in seen_ids:
+                    continue
+                seen_ids.add(pid)
+                new_in_batch += 1
+
+                prices = sorted(set(item.get("prices", [])), reverse=True)
+                orig = prices[0] if prices else 0
+                sale = prices[1] if len(prices) > 1 else (prices[0] if prices else 0)
+                discount = item.get("discountRate", 0)
+                if not discount and orig > sale > 0:
+                    discount = round((1 - sale / orig) * 100)
+
+                products.append({
+                    "product_id": pid,
+                    "product_name": (item.get("name") or "")[:200],
+                    "image_url": item.get("img", ""),
+                    "product_url": item.get("href", ""),
+                    "original_price": orig,
+                    "sale_price": sale,
+                    "discount_rate": min(discount, 100),
+                    "sold_rate": item.get("soldRate", 0),
+                    "brand_name": "",
+                    "category": "",
+                })
+
+            if new_in_batch > 0:
+                logger.info(f"  +{new_in_batch}개 수집 (누적 {len(products)}개) @ {scroll_pos}px")
+
+            # 조금씩 스크롤
+            scroll_pos += random.randint(300, 500)
+            driver.execute_script(f"window.scrollTo(0, {scroll_pos});")
+            time.sleep(random.uniform(0.3, 0.6))
+
+            # 높이 갱신
+            if scroll_pos % 2000 < 500:
+                max_height = driver.execute_script("return document.body.scrollHeight")
+
+        logger.info(f"스크롤 완료 — 총 {len(products)}개 수집")
+
+        # 이미 위에서 수집 완료, 아래 루프는 건너뜀
+        js_items = []
         for item in js_items:
             pid = item["pid"]
             if pid in seen_ids:
