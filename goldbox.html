@@ -238,14 +238,27 @@ a{color:inherit;text-decoration:none}
 
   <!-- Tab 2: 트렌드 -->
   <div class="tab-content" id="tab-trend">
+    <!-- 기간 선택 -->
+    <div class="filters" style="margin-bottom:20px">
+      <button class="sort-btn on" data-period="today" onclick="setTrendPeriod(this)">오늘</button>
+      <button class="sort-btn" data-period="7d" onclick="setTrendPeriod(this)">7일</button>
+      <button class="sort-btn" data-period="30d" onclick="setTrendPeriod(this)">30일</button>
+      <button class="sort-btn" data-period="all" onclick="setTrendPeriod(this)">전체</button>
+      <span id="trendPeriodLabel" style="font-size:12px;color:var(--text3);margin-left:8px"></span>
+    </div>
+    <!-- 카테고리별 배송유형 구성 -->
+    <div class="chart-section">
+      <div class="chart-title">카테고리별 배송유형 구성</div>
+      <div class="chart-box" style="height:400px"><canvas id="chartCatDelivery"></canvas></div>
+    </div>
     <div class="chart-row">
       <div class="chart-section">
-        <div class="chart-title">배송유형별 비율</div>
-        <div class="chart-box"><canvas id="chartDelivery"></canvas></div>
+        <div class="chart-title">카테고리 비율</div>
+        <div class="chart-box"><canvas id="chartCategory"></canvas></div>
       </div>
       <div class="chart-section">
-        <div class="chart-title">카테고리별 분포</div>
-        <div class="chart-box"><canvas id="chartCategory"></canvas></div>
+        <div class="chart-title">배송유형 비율</div>
+        <div class="chart-box"><canvas id="chartDelivery"></canvas></div>
       </div>
     </div>
     <div class="chart-row">
@@ -640,103 +653,165 @@ function openProduct(url){
 }
 
 // ── 트렌드 차트 ──
+let trendPeriod='today';
+const chartColors=['#3d8ef8','#00d4b4','#7c6af7','#ffbe3d','#ff4466','#ff8c42','#00e09a','#a78bfa','#f472b6','#34d399'];
+const deliveryColors={'로켓배송':'#3d8ef8','로켓내일':'#00e09a','로켓와우':'#ffbe3d','로켓프레시':'#00d4b4','로켓직구':'#ff8c42','판매자로켓':'#7c6af7','일반배송':'#304560','미확인':'#1a3050'};
+
+function setTrendPeriod(btn){
+  document.querySelectorAll('#tab-trend .sort-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  trendPeriod=btn.dataset.period;
+  loadTrendCharts();
+}
+
 async function loadTrendCharts(){
   try{
-    const since=new Date();
-    since.setDate(since.getDate()-30);
-    const sinceStr=since.toISOString();
+    let trendProducts=[];
+    let sinceStr='';
 
-    const chartColors=['#3d8ef8','#00d4b4','#7c6af7','#ffbe3d','#ff4466','#ff8c42','#00e09a','#a78bfa','#f472b6','#34d399'];
+    if(trendPeriod==='today'){
+      trendProducts=[...allProducts];
+      document.getElementById('trendPeriodLabel').textContent=`(${currentDate} 기준 ${trendProducts.length}개 상품)`;
+    }else{
+      // 기간에 따라 Supabase에서 데이터 가져오기
+      const now=new Date();
+      if(trendPeriod==='7d') { now.setDate(now.getDate()-7); sinceStr=now.toISOString().split('T')[0]; }
+      else if(trendPeriod==='30d') { now.setDate(now.getDate()-30); sinceStr=now.toISOString().split('T')[0]; }
+      else { sinceStr='2000-01-01'; }
 
-    // 배송유형 비율 차트
-    const deliveryCount={};
-    allProducts.forEach(p=>{
-      const dt=p.delivery_type||'미확인';
-      deliveryCount[dt]=(deliveryCount[dt]||0)+1;
-    });
-    const total=allProducts.length;
-    const dlLabels=Object.keys(deliveryCount).map(k=>k+' ('+Math.round(deliveryCount[k]/total*100)+'%)');
+      const{data:products}=await sb
+        .from('goldbox_products')
+        .select('product_id,product_name,brand_name,category,delivery_type')
+        .gte('last_seen_date',sinceStr);
 
-    renderChart('chartDelivery','doughnut',{
-      labels:dlLabels,
-      datasets:[{data:Object.values(deliveryCount),backgroundColor:chartColors}]
-    });
+      trendProducts=(products||[]).map(p=>({
+        ...p,
+        category:p.category||classifyCategory(p.product_name||''),
+        delivery_type:p.delivery_type||'미확인'
+      }));
+      const periodLabel=trendPeriod==='7d'?'최근 7일':trendPeriod==='30d'?'최근 30일':'전체';
+      document.getElementById('trendPeriodLabel').textContent=`(${periodLabel} 기준 ${trendProducts.length}개 상품)`;
+    }
 
-    // 카테고리별 분포 차트
-    const catCount={};
-    allProducts.forEach(p=>{
+    if(!trendProducts.length) return;
+
+    const total=trendProducts.length;
+
+    // ── 1. 카테고리별 배송유형 Stacked Bar ──
+    const catDelivery={}; // {category: {deliveryType: count}}
+    const allDeliveryTypes=new Set();
+    trendProducts.forEach(p=>{
       const cat=p.category||'기타';
-      catCount[cat]=(catCount[cat]||0)+1;
+      const dt=p.delivery_type||'미확인';
+      if(!catDelivery[cat]) catDelivery[cat]={};
+      catDelivery[cat][dt]=(catDelivery[cat][dt]||0)+1;
+      allDeliveryTypes.add(dt);
     });
-    const catLabels=Object.keys(catCount).map(k=>k+' ('+catCount[k]+'개)');
+    const catKeys=Object.keys(catDelivery).sort((a,b)=>{
+      const sumA=Object.values(catDelivery[a]).reduce((s,v)=>s+v,0);
+      const sumB=Object.values(catDelivery[b]).reduce((s,v)=>s+v,0);
+      return sumB-sumA;
+    });
+    const dtKeys=[...allDeliveryTypes].sort();
+    const stackedDatasets=dtKeys.map((dt,i)=>({
+      label:dt,
+      data:catKeys.map(cat=>catDelivery[cat][dt]||0),
+      backgroundColor:deliveryColors[dt]||chartColors[i%chartColors.length]
+    }));
+
+    renderChart('chartCatDelivery','bar',{
+      labels:catKeys,
+      datasets:stackedDatasets
+    },{stacked:true,indexAxis:'y'});
+
+    // ── 2. 카테고리 비율 (%) ──
+    const catCount={};
+    trendProducts.forEach(p=>{ const c=p.category||'기타'; catCount[c]=(catCount[c]||0)+1; });
+    const catSorted=Object.entries(catCount).sort((a,b)=>b[1]-a[1]);
+    const catLabels=catSorted.map(([k,v])=>k+' ('+Math.round(v/total*100)+'%)');
 
     renderChart('chartCategory','doughnut',{
       labels:catLabels,
-      datasets:[{data:Object.values(catCount),backgroundColor:chartColors}]
+      datasets:[{data:catSorted.map(([,v])=>v),backgroundColor:chartColors}]
     });
 
-    // 일별 통계
-    const{data:dailySnaps}=await sb
-      .from('goldbox_snapshots')
-      .select('crawled_at,discount_rate,sold_rate')
-      .gte('crawled_at',sinceStr)
-      .order('crawled_at',{ascending:true});
+    // ── 3. 배송유형 비율 (%) ──
+    const dlCount={};
+    trendProducts.forEach(p=>{ const d=p.delivery_type||'미확인'; dlCount[d]=(dlCount[d]||0)+1; });
+    const dlSorted=Object.entries(dlCount).sort((a,b)=>b[1]-a[1]);
+    const dlLabels=dlSorted.map(([k,v])=>k+' ('+Math.round(v/total*100)+'%)');
+    const dlColors=dlSorted.map(([k])=>deliveryColors[k]||'#304560');
 
-    if(!dailySnaps||!dailySnaps.length) return;
-
-    const dayMap={};
-    dailySnaps.forEach(s=>{
-      const day=s.crawled_at.substring(0,10);
-      if(!dayMap[day]) dayMap[day]={discounts:[],solds:[]};
-      dayMap[day].discounts.push(s.discount_rate);
-      dayMap[day].solds.push(s.sold_rate);
+    renderChart('chartDelivery','doughnut',{
+      labels:dlLabels,
+      datasets:[{data:dlSorted.map(([,v])=>v),backgroundColor:dlColors}]
     });
 
-    const days=Object.keys(dayMap).sort();
-    const avgDiscounts=days.map(d=>{
-      const arr=dayMap[d].discounts;
-      return Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
-    });
-    const avgSolds=days.map(d=>{
-      const arr=dayMap[d].solds;
-      return Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
-    });
-    const labels=days.map(d=>d.substring(5));
+    // ── 4. 일별 추이 (7일/30일/전체만) ──
+    if(trendPeriod!=='today'){
+      const sinceISO=sinceStr?sinceStr+'T00:00:00Z':'2000-01-01T00:00:00Z';
+      const{data:dailySnaps}=await sb
+        .from('goldbox_snapshots')
+        .select('crawled_at,discount_rate,sold_rate')
+        .gte('crawled_at',sinceISO)
+        .order('crawled_at',{ascending:true});
 
-    renderChart('chartDiscount','line',{
-      labels,
-      datasets:[{label:'평균 할인율 (%)',data:avgDiscounts,
-        borderColor:'#3d8ef8',backgroundColor:'rgba(61,142,248,.1)',fill:true,tension:.3}]
-    });
+      if(dailySnaps&&dailySnaps.length){
+        const dayMap={};
+        dailySnaps.forEach(s=>{
+          const day=s.crawled_at.substring(0,10);
+          if(!dayMap[day]) dayMap[day]={discounts:[],solds:[]};
+          dayMap[day].discounts.push(s.discount_rate);
+          dayMap[day].solds.push(s.sold_rate);
+        });
+        const days=Object.keys(dayMap).sort();
+        const avgDiscounts=days.map(d=>Math.round(dayMap[d].discounts.reduce((a,b)=>a+b,0)/dayMap[d].discounts.length));
+        const avgSolds=days.map(d=>Math.round(dayMap[d].solds.reduce((a,b)=>a+b,0)/dayMap[d].solds.length));
+        const labels=days.map(d=>d.substring(5));
 
-    renderChart('chartSold','line',{
-      labels,
-      datasets:[{label:'평균 소진율 (%)',data:avgSolds,
-        borderColor:'#00d4b4',backgroundColor:'rgba(0,212,180,.1)',fill:true,tension:.3}]
-    });
+        renderChart('chartDiscount','line',{labels,
+          datasets:[{label:'평균 할인율 (%)',data:avgDiscounts,borderColor:'#3d8ef8',backgroundColor:'rgba(61,142,248,.1)',fill:true,tension:.3}]
+        });
+        renderChart('chartSold','line',{labels,
+          datasets:[{label:'평균 소진율 (%)',data:avgSolds,borderColor:'#00d4b4',backgroundColor:'rgba(0,212,180,.1)',fill:true,tension:.3}]
+        });
+      }
+    }else{
+      // 오늘은 추이 없음 — 평균만 표시
+      const avgD=Math.round(trendProducts.reduce((s,p)=>s+p.discount_rate,0)/total);
+      const avgS=Math.round(trendProducts.reduce((s,p)=>s+p.sold_rate,0)/total);
+      renderChart('chartDiscount','bar',{labels:['오늘 평균'],
+        datasets:[{label:'할인율 (%)',data:[avgD],backgroundColor:'#3d8ef8'}]
+      });
+      renderChart('chartSold','bar',{labels:['오늘 평균'],
+        datasets:[{label:'소진율 (%)',data:[avgS],backgroundColor:'#00d4b4'}]
+      });
+    }
 
   }catch(err){
     console.error('트렌드 로드 오류:',err);
   }
 }
 
-function renderChart(canvasId,type,data){
+function renderChart(canvasId,type,data,opts){
   if(charts[canvasId]) charts[canvasId].destroy();
   const ctx=document.getElementById(canvasId).getContext('2d');
   const isDark=document.documentElement.dataset.theme!=='light';
   const textColor=isDark?'#c8daf0':'#2d4a6a';
   const gridColor=isDark?'rgba(26,48,80,.4)':'rgba(180,200,220,.4)';
-  charts[canvasId]=new Chart(ctx,{
-    type,data,
-    options:{
-      responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:textColor,font:{family:'sans-serif',size:13},padding:16}}},
-      scales:type==='line'?{
-        x:{ticks:{color:textColor,font:{family:'monospace',size:11}},grid:{color:gridColor}},
-        y:{ticks:{color:textColor,font:{family:'monospace',size:11}},grid:{color:gridColor}}
-      }:undefined
-    }
-  });
+  const options={
+    responsive:true,maintainAspectRatio:false,
+    indexAxis:opts&&opts.indexAxis||'x',
+    plugins:{legend:{labels:{color:textColor,font:{family:'sans-serif',size:12},padding:12}}},
+  };
+  if(type==='bar'||type==='line'){
+    const stacked=opts&&opts.stacked;
+    options.scales={
+      x:{stacked:!!stacked,ticks:{color:textColor,font:{size:11}},grid:{color:gridColor}},
+      y:{stacked:!!stacked,ticks:{color:textColor,font:{size:11}},grid:{color:gridColor}}
+    };
+  }
+  charts[canvasId]=new Chart(ctx,{type,data,options});
 }
 
 // ── 브랜드 분석 ──
