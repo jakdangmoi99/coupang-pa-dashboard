@@ -252,22 +252,50 @@ function initTabs(){
   });
 }
 
+// ── KST 날짜 헬퍼 ──
+function getKSTDate(){
+  const now=new Date();
+  const kst=new Date(now.getTime()+9*60*60*1000);
+  return kst.toISOString().split('T')[0];
+}
+
 // ── 데이터 로드 ──
 async function loadData(){
   showLoading('productGrid');
 
   try{
-    // 오늘 날짜의 상품 + 최신 스냅샷
-    const today=new Date().toISOString().split('T')[0];
+    // KST 기준 오늘 날짜
+    const today=getKSTDate();
+    console.log('조회 날짜(KST):',today);
 
-    const{data:products,error:pErr}=await sb
+    // 먼저 오늘 데이터 시도, 없으면 가장 최근 날짜
+    let{data:products,error:pErr}=await sb
       .from('goldbox_products')
       .select('*')
       .eq('last_seen_date',today);
 
     if(pErr) throw pErr;
+
+    // 오늘 데이터 없으면 최신 날짜로 조회
     if(!products||!products.length){
-      showEmpty('productGrid','아직 오늘의 골드박스 데이터가 없습니다','크롤링이 실행되면 자동으로 표시됩니다');
+      const{data:latest}=await sb
+        .from('goldbox_products')
+        .select('last_seen_date')
+        .order('last_seen_date',{ascending:false})
+        .limit(1);
+      if(latest&&latest.length){
+        const latestDate=latest[0].last_seen_date;
+        console.log('최신 날짜로 폴백:',latestDate);
+        const{data:p2,error:e2}=await sb
+          .from('goldbox_products')
+          .select('*')
+          .eq('last_seen_date',latestDate);
+        if(!e2) products=p2;
+      }
+    }
+
+    if(!products||!products.length){
+      showEmpty('productGrid','아직 골드박스 데이터가 없습니다','크롤링이 실행되면 자동으로 표시됩니다');
       updateStats([]);
       return;
     }
@@ -278,7 +306,6 @@ async function loadData(){
       .from('goldbox_snapshots')
       .select('*')
       .in('product_id',ids)
-      .gte('crawled_at',today+'T00:00:00')
       .order('crawled_at',{ascending:false});
 
     if(sErr) throw sErr;
