@@ -437,11 +437,12 @@ async function loadData(){
     allProducts=productIds.map((pid,idx)=>{
       const snap=snapMap[pid];
       const prod=productMap[pid]||{};
-      // 브랜드 자동 추출: 상품명 첫 단어
+      // 브랜드 자동 추출: 상품명 첫 단어 (한글/영문만)
       let brand=prod.brand_name||'';
       if(!brand&&prod.product_name){
         brand=prod.product_name.trim().split(/\s+/)[0]||'';
       }
+      brand=brand.replace(/[^가-힣a-zA-Z0-9\s]/g,'').trim();
       // 카테고리 자동분류 (DB에 없으면 프론트에서 분류)
       const category=prod.category||classifyCategory(prod.product_name||'');
 

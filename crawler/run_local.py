@@ -305,6 +305,8 @@ def crawl():
                 brand = item.get("brandFromCard", "")
                 if not brand:
                     brand = name.strip().split()[0] if name.strip() else ""
+                # 한글/영문/숫자만 유지 (쉼표, 특수문자 제거)
+                brand = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', brand).strip()
 
                 # 카테고리 자동 분류 (제품명 키워드 기반)
                 category = classify_category(name)
