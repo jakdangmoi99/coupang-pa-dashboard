@@ -192,22 +192,23 @@ def extract_page_products(driver):
             var allText = cardText + ' ' + cardHTML;
             if (allText.indexOf('로켓프레시') !== -1) deliveryType = '로켓프레시';
             else if (allText.indexOf('로켓직구') !== -1 || allText.indexOf('로켓 직구') !== -1) deliveryType = '로켓직구';
+            else if (allText.indexOf('판매자로켓') !== -1 || allText.indexOf('판매자 로켓') !== -1 || allText.indexOf('로켓그로스') !== -1) deliveryType = '판매자로켓';
             else if (allText.indexOf('로켓내일') !== -1 || allText.indexOf('로켓 내일') !== -1) deliveryType = '로켓내일';
             else if (allText.indexOf('로켓와우') !== -1) deliveryType = '로켓와우';
             else if (allText.indexOf('로켓배송') !== -1) deliveryType = '로켓배송';
-            else if (allText.indexOf('판매자로켓') !== -1 || allText.indexOf('로켓그로스') !== -1) deliveryType = '판매자로켓';
             // 2. img alt 속성 개별 체크
             if (!deliveryType) {
                 card.querySelectorAll('img').forEach(function(img) {
                     if (deliveryType) return;
-                    var alt = img.alt || '';
-                    var src = img.src || '';
-                    if (alt.indexOf('프레시') !== -1 || src.indexOf('fresh') !== -1) deliveryType = '로켓프레시';
-                    else if (alt.indexOf('직구') !== -1 || src.indexOf('global') !== -1 || src.indexOf('direct') !== -1) deliveryType = '로켓직구';
-                    else if (alt.indexOf('내일') !== -1 || src.indexOf('tomorrow') !== -1) deliveryType = '로켓내일';
-                    else if (alt.indexOf('와우') !== -1 || src.indexOf('wow') !== -1) deliveryType = '로켓와우';
-                    else if (alt.indexOf('로켓') !== -1 || src.indexOf('rocket') !== -1) deliveryType = '로켓배송';
-                    else if (alt.indexOf('그로스') !== -1 || src.indexOf('growth') !== -1) deliveryType = '판매자로켓';
+                    var alt = (img.alt || '').toLowerCase();
+                    var src = (img.src || '').toLowerCase();
+                    var combo = alt + ' ' + src;
+                    if (combo.indexOf('프레시') !== -1 || combo.indexOf('fresh') !== -1) deliveryType = '로켓프레시';
+                    else if (combo.indexOf('직구') !== -1 || combo.indexOf('global') !== -1) deliveryType = '로켓직구';
+                    else if (combo.indexOf('판매자') !== -1 || combo.indexOf('seller') !== -1 || combo.indexOf('그로스') !== -1 || combo.indexOf('growth') !== -1) deliveryType = '판매자로켓';
+                    else if (combo.indexOf('내일') !== -1 || combo.indexOf('tomorrow') !== -1) deliveryType = '로켓내일';
+                    else if (combo.indexOf('와우') !== -1 || combo.indexOf('wow') !== -1) deliveryType = '로켓와우';
+                    else if (combo.indexOf('로켓') !== -1 || combo.indexOf('rocket') !== -1) deliveryType = '로켓배송';
                 });
             }
             if (!deliveryType) deliveryType = '일반배송';
