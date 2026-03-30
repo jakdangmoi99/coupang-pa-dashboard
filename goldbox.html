@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="ko" data-theme="dark">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>골드박스 트래커 | Seller HQ</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root{--bg:#07111f;--surf:#0d1c30;--surf2:#122238;--surf3:#162840;--border:#1a3050;--border2:#1e3860;--accent:#3d8ef8;--accent2:#00d4b4;--accent3:#7c6af7;--green:#00e09a;--yellow:#ffbe3d;--red:#ff4466;--orange:#ff8c42;--text:#e8f0fe;--text2:#7a9abf;--text3:#304560;--cs:0 2px 12px rgba(0,0,0,.3);--radius:12px}
+[data-theme="light"]{--bg:#f0f4fa;--surf:#fff;--surf2:#f5f7fc;--surf3:#edf1f9;--border:#d0daea;--border2:#b8ccdf;--accent:#1a6ef5;--accent2:#00a896;--accent3:#6c5ce7;--green:#00875a;--yellow:#b45309;--red:#dc2626;--orange:#c05a00;--text:#0d1f36;--text2:#3d5c7a;--text3:#8ba4be;--cs:0 2px 12px rgba(0,0,0,.07)}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;min-height:100vh;font-size:14px;transition:background .3s,color .3s}
+[data-theme="dark"] body::before{content:"";position:fixed;inset:0;background:radial-gradient(ellipse 90% 60% at 15% 0%,rgba(61,142,248,.07) 0%,transparent 55%),radial-gradient(ellipse 70% 50% at 85% 100%,rgba(0,212,180,.05) 0%,transparent 55%);pointer-events:none;z-index:0}
+::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--surf)}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:4px}
+a{color:inherit;text-decoration:none}
+
+/* Layout */
+.app{max-width:1400px;margin:0 auto;padding:16px;position:relative;z-index:1}
+
+/* Header */
+.header{display:flex;align-items:center;justify-content:space-between;padding:16px 0;border-bottom:1px solid var(--border);margin-bottom:20px;flex-wrap:wrap;gap:12px}
+.hd-left{display:flex;align-items:center;gap:12px}
+.logo{width:42px;height:42px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.hd-title h1{font-size:20px;font-weight:800;letter-spacing:-.3px}
+.hd-title p{font-size:12px;color:var(--text3);font-family:monospace;margin-top:2px}
+.hd-right{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.hd-badge{background:var(--surf2);border:1px solid var(--border);border-radius:8px;padding:6px 12px;font-size:12px;color:var(--text2);font-family:monospace}
+.hd-badge b{color:var(--accent2)}
+.btn{padding:7px 14px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none;transition:all .2s;white-space:nowrap;background:transparent;color:var(--text2);border:1px solid var(--border)}
+.btn:hover{border-color:var(--accent);color:var(--accent)}
+.btn-pr{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none}
+.btn-pr:hover{transform:translateY(-1px)}
+
+/* Stats Row */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center}
+.stat-card .val{font-size:28px;font-weight:800;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.stat-card .lbl{font-size:11px;color:var(--text3);margin-top:4px;font-weight:600}
+
+/* Tabs */
+.tabs{display:flex;gap:4px;margin-bottom:16px;overflow-x:auto;padding-bottom:4px}
+.tab{padding:8px 16px;border-radius:8px;font-size:13px;font-weight:700;cursor:pointer;border:none;background:transparent;color:var(--text3);transition:all .2s;white-space:nowrap}
+.tab:hover{color:var(--text2);background:var(--surf2)}
+.tab.on{background:rgba(61,142,248,.12);color:var(--accent)}
+
+/* Filters */
+.filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;align-items:center}
+.filter-input{flex:1;min-width:200px;padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;outline:none;transition:border-color .2s}
+.filter-input:focus{border-color:var(--accent)}
+.filter-select{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text);font-size:13px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;outline:none;cursor:pointer;min-width:140px}
+.sort-btn{padding:9px 14px;border-radius:8px;border:1px solid var(--border);background:var(--surf);color:var(--text2);font-size:13px;cursor:pointer;font-weight:600;transition:all .2s;white-space:nowrap}
+.sort-btn:hover,.sort-btn.on{border-color:var(--accent);color:var(--accent)}
+
+/* Product Grid */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px;margin-bottom:24px}
+.card{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:all .2s;cursor:pointer;position:relative}
+.card:hover{border-color:var(--accent);transform:translateY(-2px);box-shadow:var(--cs)}
+.card-img{width:100%;aspect-ratio:1;object-fit:cover;background:var(--surf2);display:block}
+.card-body{padding:12px}
+.card-brand{font-size:11px;color:var(--accent2);font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+.card-name{font-size:13px;font-weight:600;line-height:1.4;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;min-height:36px;margin-bottom:8px}
+.card-prices{display:flex;align-items:baseline;gap:6px;margin-bottom:8px}
+.card-sale{font-size:18px;font-weight:800;color:var(--accent)}
+.card-origin{font-size:12px;color:var(--text3);text-decoration:line-through}
+.card-discount{background:var(--red);color:#fff;font-size:11px;font-weight:800;padding:2px 6px;border-radius:4px;position:absolute;top:10px;right:10px}
+
+/* Progress Bar (소진율) */
+.sold-bar{margin-top:8px}
+.sold-bar .bar-bg{height:8px;background:var(--surf3);border-radius:4px;overflow:hidden}
+.sold-bar .bar-fill{height:100%;border-radius:4px;transition:width .6s ease}
+.sold-bar .bar-label{display:flex;justify-content:space-between;font-size:11px;color:var(--text3);margin-top:4px;font-weight:600}
+.bar-fill.low{background:var(--green)}
+.bar-fill.mid{background:var(--yellow)}
+.bar-fill.high{background:linear-gradient(90deg,var(--orange),var(--red))}
+
+/* Category Badge */
+.card-cat{display:inline-block;font-size:10px;color:var(--text3);background:var(--surf2);padding:2px 8px;border-radius:4px;margin-bottom:6px}
+
+/* Tab Content */
+.tab-content{display:none}
+.tab-content.active{display:block}
+
+/* Chart Area */
+.chart-section{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);padding:20px;margin-bottom:20px}
+.chart-title{font-size:15px;font-weight:700;margin-bottom:16px}
+.chart-row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.chart-box{position:relative;height:300px}
+
+/* Brand Analysis */
+.brand-search-box{display:flex;gap:8px;margin-bottom:20px}
+.brand-result{background:var(--surf);border:1px solid var(--border);border-radius:var(--radius);padding:20px}
+.brand-header{display:flex;align-items:center;gap:16px;margin-bottom:16px;flex-wrap:wrap}
+.brand-stat{text-align:center;padding:12px 20px;background:var(--surf2);border-radius:8px}
+.brand-stat .bv{font-size:22px;font-weight:800;color:var(--accent)}
+.brand-stat .bl{font-size:11px;color:var(--text3);margin-top:2px}
+.brand-products{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;margin-top:16px}
+
+/* Snapshot Timeline */
+.timeline{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+.snap-btn{padding:6px 12px;border-radius:6px;border:1px solid var(--border);background:var(--surf);color:var(--text2);font-size:12px;cursor:pointer;font-family:monospace;transition:all .2s}
+.snap-btn:hover,.snap-btn.on{border-color:var(--accent);color:var(--accent);background:rgba(61,142,248,.08)}
+
+/* Empty State */
+.empty{text-align:center;padding:60px 20px;color:var(--text3)}
+.empty .ico{font-size:48px;margin-bottom:12px}
+.empty .msg{font-size:15px;font-weight:600}
+.empty .sub{font-size:13px;margin-top:6px}
+
+/* Loading */
+.loading{text-align:center;padding:60px}
+.spinner{width:36px;height:36px;border:3px solid var(--border);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 12px}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* Back Link */
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--text3);font-size:13px;font-weight:600;margin-bottom:12px;transition:color .2s}
+.back-link:hover{color:var(--accent)}
+
+/* Responsive */
+@media(max-width:768px){
+  .app{padding:12px}
+  .header{padding:12px 0}
+  .hd-title h1{font-size:17px}
+  .stats{grid-template-columns:repeat(2,1fr)}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+  .card-body{padding:10px}
+  .card-sale{font-size:15px}
+  .chart-row{grid-template-columns:1fr}
+  .chart-box{height:250px}
+  .filters{flex-direction:column}
+  .filter-input{min-width:100%}
+  .brand-search-box{flex-direction:column}
+}
+@media(max-width:400px){
+  .grid{grid-template-columns:repeat(2,1fr);gap:8px}
+  .card-body{padding:8px}
+  .card-name{font-size:12px;min-height:32px}
+  .card-sale{font-size:14px}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="hd-left">
+      <div class="logo">📦</div>
+      <div class="hd-title">
+        <h1>골드박스 트래커</h1>
+        <p>Coupang GoldBox Tracker</p>
+      </div>
+    </div>
+    <div class="hd-right">
+      <div class="hd-badge">최근 수집 <b id="lastCrawl">-</b></div>
+      <div class="hd-badge">상품 <b id="totalCount">0</b>개</div>
+      <button class="btn" onclick="toggleTheme()">🌓</button>
+      <button class="btn btn-pr" onclick="loadData()">새로고침</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-card"><div class="val" id="statProducts">-</div><div class="lbl">오늘 상품 수</div></div>
+    <div class="stat-card"><div class="val" id="statAvgDiscount">-</div><div class="lbl">평균 할인율</div></div>
+    <div class="stat-card"><div class="val" id="statAvgSold">-</div><div class="lbl">평균 소진율</div></div>
+    <div class="stat-card"><div class="val" id="statBrands">-</div><div class="lbl">브랜드 수</div></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab on" data-tab="today">오늘의 골드박스</button>
+    <button class="tab" data-tab="trend">트렌드 분석</button>
+    <button class="tab" data-tab="brand">브랜드 분석</button>
+  </div>
+
+  <!-- Tab 1: 오늘의 골드박스 -->
+  <div class="tab-content active" id="tab-today">
+    <!-- Snapshot Timeline -->
+    <div class="timeline" id="snapshotTimeline"></div>
+
+    <!-- Filters -->
+    <div class="filters">
+      <input class="filter-input" id="searchInput" placeholder="상품명 또는 브랜드 검색..." oninput="filterProducts()">
+      <select class="filter-select" id="categoryFilter" onchange="filterProducts()">
+        <option value="">전체 카테고리</option>
+      </select>
+      <button class="sort-btn on" data-sort="sold_rate" onclick="setSort(this)">소진율순</button>
+      <button class="sort-btn" data-sort="discount_rate" onclick="setSort(this)">할인율순</button>
+      <button class="sort-btn" data-sort="sale_price" onclick="setSort(this)">가격순</button>
+    </div>
+
+    <div id="productGrid" class="grid"></div>
+  </div>
+
+  <!-- Tab 2: 트렌드 -->
+  <div class="tab-content" id="tab-trend">
+    <div class="chart-section">
+      <div class="chart-title">카테고리별 상품 분포</div>
+      <div class="chart-box"><canvas id="chartCategory"></canvas></div>
+    </div>
+    <div class="chart-row">
+      <div class="chart-section">
+        <div class="chart-title">일별 평균 할인율 추이</div>
+        <div class="chart-box"><canvas id="chartDiscount"></canvas></div>
+      </div>
+      <div class="chart-section">
+        <div class="chart-title">일별 평균 소진율 추이</div>
+        <div class="chart-box"><canvas id="chartSold"></canvas></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab 3: 브랜드 분석 -->
+  <div class="tab-content" id="tab-brand">
+    <div class="brand-search-box">
+      <input class="filter-input" id="brandSearchInput" placeholder="브랜드명 검색 (예: 삼성, LG, 나이키...)">
+      <button class="btn btn-pr" onclick="searchBrand()">검색</button>
+    </div>
+    <div id="brandResult"></div>
+  </div>
+</div>
+
+<script>
+// ── Supabase 연결 ──
+const SUPABASE_URL='https://jzzwrlvtospuwntnafhn.supabase.co';
+const SUPABASE_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp6endybHZ0b3NwdXdudG5hZmhuIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MTgwMzQsImV4cCI6MjA4ODE5NDAzNH0.9txsHj4bm5iB4L4LfKgU0pRGZK0yJsHhNyFBh7_HMsw';
+const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+// ── 상태 ──
+let allProducts=[];
+let currentSort='sold_rate';
+let currentSortDir='desc';
+let charts={};
+
+// ── 초기화 ──
+document.addEventListener('DOMContentLoaded',()=>{
+  initTabs();
+  loadData();
+});
+
+// ── 탭 전환 ──
+function initTabs(){
+  document.querySelectorAll('.tab').forEach(t=>{
+    t.addEventListener('click',()=>{
+      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('on'));
+      document.querySelectorAll('.tab-content').forEach(x=>x.classList.remove('active'));
+      t.classList.add('on');
+      document.getElementById('tab-'+t.dataset.tab).classList.add('active');
+      if(t.dataset.tab==='trend') loadTrendCharts();
+    });
+  });
+}
+
+// ── 데이터 로드 ──
+async function loadData(){
+  showLoading('productGrid');
+
+  try{
+    // 오늘 날짜의 상품 + 최신 스냅샷
+    const today=new Date().toISOString().split('T')[0];
+
+    const{data:products,error:pErr}=await sb
+      .from('goldbox_products')
+      .select('*')
+      .eq('last_seen_date',today);
+
+    if(pErr) throw pErr;
+    if(!products||!products.length){
+      showEmpty('productGrid','아직 오늘의 골드박스 데이터가 없습니다','크롤링이 실행되면 자동으로 표시됩니다');
+      updateStats([]);
+      return;
+    }
+
+    // 각 상품의 최신 스냅샷 가져오기
+    const ids=products.map(p=>p.product_id);
+    const{data:snapshots,error:sErr}=await sb
+      .from('goldbox_snapshots')
+      .select('*')
+      .in('product_id',ids)
+      .gte('crawled_at',today+'T00:00:00')
+      .order('crawled_at',{ascending:false});
+
+    if(sErr) throw sErr;
+
+    // 상품별 최신 스냅샷 매칭
+    const snapMap={};
+    const snapTimes=new Set();
+    (snapshots||[]).forEach(s=>{
+      const timeKey=s.crawled_at.substring(0,16);
+      snapTimes.add(timeKey);
+      if(!snapMap[s.product_id]) snapMap[s.product_id]=s;
+    });
+
+    allProducts=products.map(p=>{
+      const snap=snapMap[p.product_id]||{};
+      return{
+        ...p,
+        original_price:snap.original_price||0,
+        sale_price:snap.sale_price||0,
+        discount_rate:snap.discount_rate||0,
+        sold_rate:snap.sold_rate||0,
+        crawled_at:snap.crawled_at||''
+      };
+    });
+
+    // 스냅샷 타임라인 버튼
+    renderTimeline([...snapTimes].sort());
+
+    // 카테고리 필터 채우기
+    populateCategories();
+
+    // 통계 업데이트
+    updateStats(allProducts);
+
+    // 최근 수집 시간
+    if(allProducts.length&&allProducts[0].crawled_at){
+      const d=new Date(allProducts[0].crawled_at);
+      document.getElementById('lastCrawl').textContent=
+        d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    }
+    document.getElementById('totalCount').textContent=allProducts.length;
+
+    // 상품 렌더
+    filterProducts();
+
+  }catch(err){
+    console.error('데이터 로드 오류:',err);
+    showEmpty('productGrid','데이터 로드 중 오류가 발생했습니다',err.message);
+  }
+}
+
+// ── 통계 업데이트 ──
+function updateStats(items){
+  document.getElementById('statProducts').textContent=items.length||'-';
+
+  if(items.length){
+    const avgDiscount=Math.round(items.reduce((s,i)=>s+i.discount_rate,0)/items.length);
+    const avgSold=Math.round(items.reduce((s,i)=>s+i.sold_rate,0)/items.length);
+    const brands=new Set(items.filter(i=>i.brand_name).map(i=>i.brand_name));
+    document.getElementById('statAvgDiscount').textContent=avgDiscount+'%';
+    document.getElementById('statAvgSold').textContent=avgSold+'%';
+    document.getElementById('statBrands').textContent=brands.size;
+  }else{
+    ['statAvgDiscount','statAvgSold','statBrands'].forEach(id=>{
+      document.getElementById(id).textContent='-';
+    });
+  }
+}
+
+// ── 카테고리 필터 ──
+function populateCategories(){
+  const cats=[...new Set(allProducts.filter(p=>p.category).map(p=>p.category))].sort();
+  const sel=document.getElementById('categoryFilter');
+  sel.innerHTML='<option value="">전체 카테고리</option>';
+  cats.forEach(c=>{
+    const opt=document.createElement('option');
+    opt.value=c;opt.textContent=c;
+    sel.appendChild(opt);
+  });
+}
+
+// ── 필터 + 정렬 ──
+function filterProducts(){
+  const q=document.getElementById('searchInput').value.toLowerCase();
+  const cat=document.getElementById('categoryFilter').value;
+
+  let filtered=allProducts.filter(p=>{
+    if(q&&!p.product_name.toLowerCase().includes(q)&&!p.brand_name.toLowerCase().includes(q)) return false;
+    if(cat&&p.category!==cat) return false;
+    return true;
+  });
+
+  filtered.sort((a,b)=>{
+    const va=a[currentSort]||0,vb=b[currentSort]||0;
+    return currentSortDir==='desc'?vb-va:va-vb;
+  });
+
+  renderGrid(filtered);
+}
+
+function setSort(btn){
+  document.querySelectorAll('.sort-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  const newSort=btn.dataset.sort;
+  if(currentSort===newSort){
+    currentSortDir=currentSortDir==='desc'?'asc':'desc';
+  }else{
+    currentSort=newSort;
+    currentSortDir='desc';
+  }
+  filterProducts();
+}
+
+// ── 상품 그리드 렌더링 ──
+function renderGrid(items){
+  const grid=document.getElementById('productGrid');
+  if(!items.length){
+    showEmpty('productGrid','검색 결과가 없습니다','다른 키워드로 검색해보세요');
+    return;
+  }
+  grid.innerHTML=items.map(p=>cardHTML(p)).join('');
+}
+
+function cardHTML(p){
+  const soldClass=p.sold_rate<50?'low':p.sold_rate<80?'mid':'high';
+  const price=p.sale_price?p.sale_price.toLocaleString()+'원':'가격 정보 없음';
+  const origPrice=p.original_price?p.original_price.toLocaleString()+'원':'';
+  const imgSrc=p.image_url||'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="%23122238"/></svg>';
+
+  return `<div class="card" onclick="openProduct('${p.product_url||''}')">
+    ${p.discount_rate?`<span class="card-discount">${p.discount_rate}%</span>`:''}
+    <img class="card-img" src="${imgSrc}" alt="${esc(p.product_name)}" loading="lazy" onerror="this.style.display='none'">
+    <div class="card-body">
+      ${p.category?`<span class="card-cat">${esc(p.category)}</span>`:''}
+      ${p.brand_name?`<div class="card-brand">${esc(p.brand_name)}</div>`:''}
+      <div class="card-name">${esc(p.product_name)}</div>
+      <div class="card-prices">
+        <span class="card-sale">${price}</span>
+        ${origPrice?`<span class="card-origin">${origPrice}</span>`:''}
+      </div>
+      <div class="sold-bar">
+        <div class="bar-bg"><div class="bar-fill ${soldClass}" style="width:${p.sold_rate}%"></div></div>
+        <div class="bar-label"><span>소진율</span><span>${p.sold_rate}%</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function openProduct(url){
+  if(url) window.open(url,'_blank');
+}
+
+// ── 스냅샷 타임라인 ──
+function renderTimeline(times){
+  const container=document.getElementById('snapshotTimeline');
+  if(!times.length){container.innerHTML='';return;}
+  container.innerHTML=times.map((t,i)=>{
+    const d=new Date(t);
+    const label=d.toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'});
+    return `<button class="snap-btn${i===0?' on':''}" data-time="${t}" onclick="loadSnapshot(this,'${t}')">${label}</button>`;
+  }).join('');
+}
+
+async function loadSnapshot(btn,timeKey){
+  document.querySelectorAll('.snap-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+
+  const today=new Date().toISOString().split('T')[0];
+  const{data:snapshots}=await sb
+    .from('goldbox_snapshots')
+    .select('*')
+    .gte('crawled_at',timeKey+':00')
+    .lte('crawled_at',timeKey+':59')
+    .order('crawled_at',{ascending:false});
+
+  if(!snapshots) return;
+
+  const snapMap={};
+  snapshots.forEach(s=>{if(!snapMap[s.product_id]) snapMap[s.product_id]=s;});
+
+  allProducts=allProducts.map(p=>{
+    const snap=snapMap[p.product_id];
+    if(snap){
+      return{...p,original_price:snap.original_price,sale_price:snap.sale_price,
+        discount_rate:snap.discount_rate,sold_rate:snap.sold_rate,crawled_at:snap.crawled_at};
+    }
+    return p;
+  });
+
+  updateStats(allProducts);
+  filterProducts();
+}
+
+// ── 트렌드 차트 ──
+async function loadTrendCharts(){
+  try{
+    // 최근 30일 데이터
+    const since=new Date();
+    since.setDate(since.getDate()-30);
+    const sinceStr=since.toISOString();
+
+    // 카테고리 분포 (오늘)
+    const catCount={};
+    allProducts.forEach(p=>{
+      const cat=p.category||'미분류';
+      catCount[cat]=(catCount[cat]||0)+1;
+    });
+
+    renderChart('chartCategory','doughnut',{
+      labels:Object.keys(catCount),
+      datasets:[{data:Object.values(catCount),
+        backgroundColor:['#3d8ef8','#00d4b4','#7c6af7','#ffbe3d','#ff4466','#ff8c42','#00e09a','#a78bfa','#f472b6','#34d399']}]
+    });
+
+    // 일별 통계
+    const{data:dailySnaps}=await sb
+      .from('goldbox_snapshots')
+      .select('crawled_at,discount_rate,sold_rate')
+      .gte('crawled_at',sinceStr)
+      .order('crawled_at',{ascending:true});
+
+    if(!dailySnaps||!dailySnaps.length) return;
+
+    const dayMap={};
+    dailySnaps.forEach(s=>{
+      const day=s.crawled_at.substring(0,10);
+      if(!dayMap[day]) dayMap[day]={discounts:[],solds:[]};
+      dayMap[day].discounts.push(s.discount_rate);
+      dayMap[day].solds.push(s.sold_rate);
+    });
+
+    const days=Object.keys(dayMap).sort();
+    const avgDiscounts=days.map(d=>{
+      const arr=dayMap[d].discounts;
+      return Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
+    });
+    const avgSolds=days.map(d=>{
+      const arr=dayMap[d].solds;
+      return Math.round(arr.reduce((a,b)=>a+b,0)/arr.length);
+    });
+    const labels=days.map(d=>d.substring(5));
+
+    renderChart('chartDiscount','line',{
+      labels,
+      datasets:[{label:'평균 할인율 (%)',data:avgDiscounts,
+        borderColor:'#3d8ef8',backgroundColor:'rgba(61,142,248,.1)',fill:true,tension:.3}]
+    });
+
+    renderChart('chartSold','line',{
+      labels,
+      datasets:[{label:'평균 소진율 (%)',data:avgSolds,
+        borderColor:'#00d4b4',backgroundColor:'rgba(0,212,180,.1)',fill:true,tension:.3}]
+    });
+
+  }catch(err){
+    console.error('트렌드 로드 오류:',err);
+  }
+}
+
+function renderChart(canvasId,type,data){
+  if(charts[canvasId]) charts[canvasId].destroy();
+  const ctx=document.getElementById(canvasId).getContext('2d');
+  charts[canvasId]=new Chart(ctx,{
+    type,data,
+    options:{
+      responsive:true,maintainAspectRatio:false,
+      plugins:{legend:{labels:{color:'var(--text2)',font:{family:'sans-serif'}}}},
+      scales:type==='line'?{
+        x:{ticks:{color:'#7a9abf',font:{family:'monospace',size:11}},grid:{color:'rgba(26,48,80,.3)'}},
+        y:{ticks:{color:'#7a9abf',font:{family:'monospace',size:11}},grid:{color:'rgba(26,48,80,.3)'}}
+      }:undefined
+    }
+  });
+}
+
+// ── 브랜드 분석 ──
+async function searchBrand(){
+  const q=document.getElementById('brandSearchInput').value.trim();
+  if(!q){alert('브랜드명을 입력해주세요');return;}
+
+  const container=document.getElementById('brandResult');
+  container.innerHTML='<div class="loading"><div class="spinner"></div><p>검색 중...</p></div>';
+
+  try{
+    const{data:products}=await sb
+      .from('goldbox_products')
+      .select('*')
+      .ilike('brand_name','%'+q+'%')
+      .order('last_seen_date',{ascending:false})
+      .limit(100);
+
+    if(!products||!products.length){
+      container.innerHTML=`<div class="empty"><div class="ico">🔍</div><div class="msg">"${esc(q)}" 브랜드를 찾을 수 없습니다</div><div class="sub">다른 키워드로 검색해보세요</div></div>`;
+      return;
+    }
+
+    // 브랜드별 통계
+    const ids=products.map(p=>p.product_id);
+    const{data:snaps}=await sb
+      .from('goldbox_snapshots')
+      .select('product_id,discount_rate,sold_rate,crawled_at')
+      .in('product_id',ids)
+      .order('crawled_at',{ascending:false});
+
+    const totalAppearances=new Set(products.map(p=>p.last_seen_date)).size;
+    const avgDiscount=snaps&&snaps.length
+      ?Math.round(snaps.reduce((s,x)=>s+x.discount_rate,0)/snaps.length):0;
+    const avgSold=snaps&&snaps.length
+      ?Math.round(snaps.reduce((s,x)=>s+x.sold_rate,0)/snaps.length):0;
+
+    container.innerHTML=`
+      <div class="brand-result">
+        <div class="brand-header">
+          <h2 style="font-size:18px;font-weight:800">${esc(products[0].brand_name)}</h2>
+          <div class="brand-stat"><div class="bv">${products.length}</div><div class="bl">등록 상품</div></div>
+          <div class="brand-stat"><div class="bv">${totalAppearances}일</div><div class="bl">골드박스 등장</div></div>
+          <div class="brand-stat"><div class="bv">${avgDiscount}%</div><div class="bl">평균 할인율</div></div>
+          <div class="brand-stat"><div class="bv">${avgSold}%</div><div class="bl">평균 소진율</div></div>
+        </div>
+        <h3 style="font-size:14px;font-weight:700;margin-bottom:12px">등장 상품 목록</h3>
+        <div class="brand-products">
+          ${products.map(p=>`
+            <div class="card" style="cursor:pointer" onclick="openProduct('${p.product_url||''}')">
+              ${p.image_url?`<img class="card-img" src="${p.image_url}" loading="lazy" onerror="this.style.display='none'">`:''}
+              <div class="card-body">
+                <div class="card-name">${esc(p.product_name)}</div>
+                <div style="font-size:11px;color:var(--text3);margin-top:4px">
+                  최초 ${p.first_seen_date} / 최근 ${p.last_seen_date}
+                </div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+
+  }catch(err){
+    container.innerHTML=`<div class="empty"><div class="msg">오류: ${esc(err.message)}</div></div>`;
+  }
+}
+
+// ── 유틸 ──
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function showLoading(id){
+  document.getElementById(id).innerHTML='<div class="loading"><div class="spinner"></div><p style="color:var(--text3)">데이터 로드 중...</p></div>';
+}
+
+function showEmpty(id,msg,sub){
+  document.getElementById(id).innerHTML=`<div class="empty"><div class="ico">📦</div><div class="msg">${msg}</div>${sub?`<div class="sub">${sub}</div>`:''}</div>`;
+}
+
+function toggleTheme(){
+  const html=document.documentElement;
+  html.dataset.theme=html.dataset.theme==='dark'?'light':'dark';
+  localStorage.setItem('gb-theme',html.dataset.theme);
+}
+
+// 저장된 테마 적용
+(()=>{const t=localStorage.getItem('gb-theme');if(t)document.documentElement.dataset.theme=t;})();
+
+// Enter 키로 브랜드 검색
+document.addEventListener('keydown',e=>{
+  if(e.key==='Enter'&&document.activeElement.id==='brandSearchInput') searchBrand();
+});
+</script>
+</body>
+</html>
