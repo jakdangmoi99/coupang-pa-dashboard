@@ -227,8 +227,8 @@ a{color:inherit;text-decoration:none}
       <button class="sort-btn" data-sort="discount_rate" onclick="setSort(this)">할인율순</button>
       <button class="sort-btn" data-sort="sale_price" onclick="setSort(this)">가격순</button>
       <span style="border-left:1px solid var(--border);height:24px;margin:0 4px"></span>
-      <button class="view-btn on" data-view="card" onclick="setView(this)">카드뷰</button>
-      <button class="view-btn" data-view="table" onclick="setView(this)">테이블뷰</button>
+      <button class="view-btn" data-view="card" onclick="setView(this)">카드뷰</button>
+      <button class="view-btn on" data-view="table" onclick="setView(this)">테이블뷰</button>
     </div>
 
     <div id="productGrid" class="grid"></div>
@@ -278,7 +278,7 @@ const sb=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let allProducts=[];
 let currentSort='sold_rate';
 let currentSortDir='desc';
-let currentView='card';
+let currentView='table';
 let charts={};
 let currentDate='';
 
