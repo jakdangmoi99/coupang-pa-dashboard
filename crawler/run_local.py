@@ -87,12 +87,29 @@ def extract_page_products(driver):
             });
 
             var deliveryType = '';
+            var cardHTML = card.innerHTML || '';
             var cardText = card.innerText || '';
-            if (cardText.indexOf('로켓프레시') !== -1) deliveryType = '로켓프레시';
-            else if (cardText.indexOf('로켓와우') !== -1) deliveryType = '로켓배송';
-            else if (cardText.indexOf('로켓배송') !== -1) deliveryType = '로켓배송';
-            else if (cardText.indexOf('판매자로켓') !== -1 || cardText.indexOf('로켓그로스') !== -1) deliveryType = '판매자로켓';
-            else deliveryType = '일반택배';
+            // 1. 전체 HTML에서 로켓 관련 텍스트 검색 (img alt, title, 텍스트 모두 포함)
+            var allText = cardText + ' ' + cardHTML;
+            if (allText.indexOf('로켓프레시') !== -1) deliveryType = '로켓프레시';
+            else if (allText.indexOf('로켓내일') !== -1 || allText.indexOf('로켓 내일') !== -1) deliveryType = '로켓내일';
+            else if (allText.indexOf('로켓와우') !== -1) deliveryType = '로켓와우';
+            else if (allText.indexOf('로켓배송') !== -1) deliveryType = '로켓배송';
+            else if (allText.indexOf('판매자로켓') !== -1 || allText.indexOf('로켓그로스') !== -1) deliveryType = '판매자로켓';
+            // 2. img alt 속성 개별 체크
+            if (!deliveryType) {
+                card.querySelectorAll('img').forEach(function(img) {
+                    if (deliveryType) return;
+                    var alt = img.alt || '';
+                    var src = img.src || '';
+                    if (alt.indexOf('프레시') !== -1 || src.indexOf('fresh') !== -1) deliveryType = '로켓프레시';
+                    else if (alt.indexOf('내일') !== -1 || src.indexOf('tomorrow') !== -1) deliveryType = '로켓내일';
+                    else if (alt.indexOf('와우') !== -1 || src.indexOf('wow') !== -1) deliveryType = '로켓와우';
+                    else if (alt.indexOf('로켓') !== -1 || src.indexOf('rocket') !== -1) deliveryType = '로켓배송';
+                    else if (alt.indexOf('그로스') !== -1 || src.indexOf('growth') !== -1) deliveryType = '판매자로켓';
+                });
+            }
+            if (!deliveryType) deliveryType = '일반배송';
 
             results.push({
                 pid: m[1], href: href, img: imgSrc,
@@ -148,9 +165,13 @@ def crawl():
                 if not discount and orig > sale > 0:
                     discount = round((1 - sale / orig) * 100)
 
+                name = (item.get("name") or "")[:200]
+                # 브랜드 추출: 상품명 첫 번째 단어
+                brand = name.strip().split()[0] if name.strip() else ""
+
                 products.append({
                     "product_id": pid,
-                    "product_name": (item.get("name") or "")[:200],
+                    "product_name": name,
                     "image_url": item.get("img", ""),
                     "product_url": item.get("href", ""),
                     "original_price": orig,
@@ -158,7 +179,7 @@ def crawl():
                     "discount_rate": min(discount, 100),
                     "sold_rate": item.get("soldRate", 0),
                     "delivery_type": item.get("deliveryType", ""),
-                    "brand_name": "",
+                    "brand_name": brand,
                     "category": "",
                 })
 

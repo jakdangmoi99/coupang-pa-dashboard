@@ -81,6 +81,8 @@ a{color:inherit;text-decoration:none}
 /* Delivery Badge */
 .card-delivery{display:inline-block;font-size:10px;padding:2px 8px;border-radius:4px;margin-bottom:6px;font-weight:700}
 .card-delivery.rocket{background:rgba(61,142,248,.15);color:var(--accent)}
+.card-delivery.tomorrow{background:rgba(0,224,154,.15);color:var(--green)}
+.card-delivery.wow{background:rgba(255,190,61,.15);color:var(--yellow)}
 .card-delivery.fresh{background:rgba(0,212,180,.15);color:var(--accent2)}
 .card-delivery.seller{background:rgba(124,106,247,.15);color:var(--accent3)}
 .card-delivery.normal{background:var(--surf2);color:var(--text3)}
@@ -209,9 +211,11 @@ a{color:inherit;text-decoration:none}
       <select class="filter-select" id="deliveryFilter" onchange="filterProducts()">
         <option value="">전체 배송</option>
         <option value="로켓배송">로켓배송</option>
+        <option value="로켓내일">로켓내일</option>
+        <option value="로켓와우">로켓와우</option>
         <option value="로켓프레시">로켓프레시</option>
         <option value="판매자로켓">판매자로켓</option>
-        <option value="일반택배">일반택배</option>
+        <option value="일반배송">일반배송</option>
       </select>
       <button class="sort-btn" data-sort="_index" onclick="setSort(this)">노출순</button>
       <button class="sort-btn on" data-sort="sold_rate" onclick="setSort(this)">소진율순</button>
@@ -301,15 +305,16 @@ function getKSTDate(){
   return kst.toISOString().split('T')[0];
 }
 
-// 특정 날짜의 골드박스 시작 시각 (UTC) = 해당일 07:00 KST = 전날 22:00 UTC
+// 해당일 07:00 KST = 전날 22:00 UTC
 function getGoldboxStartUTC(dateStr){
-  return dateStr+'T22:00:00.000Z'; // 전날 22:00 UTC = 당일 07:00 KST
-}
-// 종료 시각: 다음날 07:00 KST = 당일 22:00 UTC
-function getGoldboxEndUTC(dateStr){
-  const d=new Date(dateStr+'T22:00:00.000Z');
-  d.setUTCDate(d.getUTCDate()+1);
+  const d=new Date(dateStr+'T00:00:00.000Z');
+  d.setUTCDate(d.getUTCDate()-1);
+  d.setUTCHours(22,0,0,0);
   return d.toISOString();
+}
+// 다음날 07:00 KST = 당일 22:00 UTC
+function getGoldboxEndUTC(dateStr){
+  return dateStr+'T22:00:00.000Z';
 }
 
 // ── 날짜 변경 ──
@@ -377,14 +382,32 @@ async function loadData(){
       return;
     }
 
-    // 상품별 최신 스냅샷 매칭 + 타임라인 수집
-    const snapMap={};
+    // 상품별 최신 스냅샷 매칭 + 시간대별 소진율 수집
+    const snapMap={};       // product_id → 최신 스냅샷
     const snapTimes=new Set();
+    const soldByTime={};    // product_id → { 'HH:MM': sold_rate }
+    const timeLabels=new Set();
+
     snapshots.forEach(s=>{
       const timeKey=s.crawled_at.substring(0,16);
       snapTimes.add(timeKey);
       if(!snapMap[s.product_id]) snapMap[s.product_id]=s;
+
+      // 시간대별 소진율 (KST 기준 시각)
+      const kstTime=new Date(new Date(s.crawled_at).getTime()+9*60*60*1000);
+      const hh=String(kstTime.getUTCHours()).padStart(2,'0');
+      const mm=String(kstTime.getUTCMinutes()).padStart(2,'0');
+      const timeLabel=hh+':'+mm;
+      // 같은 시간대(시 단위)로 그룹핑 — 07:xx → "07시"
+      const hourLabel=hh+'시';
+      timeLabels.add(hourLabel);
+      if(!soldByTime[s.product_id]) soldByTime[s.product_id]={};
+      // 해당 시간대의 최신 값만 유지
+      if(!soldByTime[s.product_id][hourLabel]) soldByTime[s.product_id][hourLabel]=s.sold_rate;
     });
+
+    // 시간대 라벨 정렬
+    const sortedTimeLabels=[...timeLabels].sort();
 
     // 스냅샷에 있는 상품들의 product 정보 가져오기
     const productIds=[...new Set(Object.keys(snapMap))];
@@ -401,16 +424,24 @@ async function loadData(){
     allProducts=productIds.map((pid,idx)=>{
       const snap=snapMap[pid];
       const prod=productMap[pid]||{};
+      // 브랜드 자동 추출: 상품명 첫 단어
+      let brand=prod.brand_name||'';
+      if(!brand&&prod.product_name){
+        brand=prod.product_name.trim().split(/\s+/)[0]||'';
+      }
       return{
         ...prod,
         product_id:pid,
+        brand_name:brand,
         original_price:snap.original_price||0,
         sale_price:snap.sale_price||0,
         discount_rate:snap.discount_rate||0,
         sold_rate:snap.sold_rate||0,
         crawled_at:snap.crawled_at||'',
         _index:snap.crawl_order||snap.id||idx+1,
-        delivery_type:prod.delivery_type||''
+        delivery_type:prod.delivery_type||'',
+        _soldByTime:soldByTime[pid]||{},
+        _timeLabels:sortedTimeLabels
       };
     });
 
@@ -520,7 +551,7 @@ function cardHTML(p){
   const price=p.sale_price?p.sale_price.toLocaleString()+'원':'가격 정보 없음';
   const origPrice=p.original_price?p.original_price.toLocaleString()+'원':'';
   const imgSrc=p.image_url||'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect fill="%23122238"/></svg>';
-  const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
+  const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓내일'?'tomorrow':p.delivery_type==='로켓와우'?'wow':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
 
   return `<div class="card" onclick="openProduct('${p.product_url||''}')">
     ${p.discount_rate?`<span class="card-discount">${p.discount_rate}%</span>`:''}
@@ -543,9 +574,25 @@ function cardHTML(p){
 
 // ── 테이블 렌더링 ──
 function renderTable(items){
+  // 시간대 라벨 추출 (모든 상품의 시간대 합집합)
+  const timeCols=items.length&&items[0]._timeLabels?items[0]._timeLabels:[];
+  const hasMultiTime=timeCols.length>1;
+
   const rows=items.map((p,i)=>{
     const soldClass=p.sold_rate<50?'td-sold-low':p.sold_rate<80?'td-sold-mid':'td-sold-high';
-    const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
+    const deliveryCls=p.delivery_type==='로켓배송'?'rocket':p.delivery_type==='로켓내일'?'tomorrow':p.delivery_type==='로켓와우'?'wow':p.delivery_type==='로켓프레시'?'fresh':p.delivery_type==='판매자로켓'?'seller':'normal';
+
+    // 시간대별 소진율 셀
+    let timeCells='';
+    if(hasMultiTime){
+      timeCells=timeCols.map(t=>{
+        const val=p._soldByTime[t];
+        if(val===undefined) return '<td class="td-rate" style="color:var(--text3)">-</td>';
+        const cls=val<50?'td-sold-low':val<80?'td-sold-mid':'td-sold-high';
+        return `<td class="td-rate ${cls}">${val}%</td>`;
+      }).join('');
+    }
+
     return `<tr onclick="openProduct('${p.product_url||''}')">
       <td class="td-rank">${i+1}</td>
       <td>${p.brand_name?esc(p.brand_name):'-'}</td>
@@ -554,13 +601,17 @@ function renderTable(items){
       <td class="td-price">${p.sale_price?p.sale_price.toLocaleString()+'원':'-'}</td>
       <td class="td-rate td-discount">${p.discount_rate?p.discount_rate+'%':'-'}</td>
       <td class="td-rate ${soldClass}">${p.sold_rate}%</td>
+      ${timeCells}
       <td class="td-delivery"><span class="card-delivery ${deliveryCls}">${p.delivery_type||'-'}</span></td>
     </tr>`;
   }).join('');
 
+  // 시간대 헤더
+  const timeHeaders=hasMultiTime?timeCols.map(t=>`<th>${t}</th>`).join(''):'';
+
   return `<div class="table-wrapper"><table class="product-table">
     <thead><tr>
-      <th>순번</th><th>브랜드</th><th>제품명</th><th>정상가</th><th>할인가</th><th>할인율</th><th>소진율</th><th>배송</th>
+      <th>순번</th><th>브랜드</th><th>제품명</th><th>정상가</th><th>할인가</th><th>할인율</th><th>최신소진율</th>${timeHeaders}<th>배송</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
