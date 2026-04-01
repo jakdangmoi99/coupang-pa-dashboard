@@ -55,7 +55,37 @@ CREATE POLICY "goldbox_products_update" ON goldbox_products
 CREATE POLICY "goldbox_snapshots_insert" ON goldbox_snapshots
   FOR INSERT WITH CHECK (auth.role() = 'service_role');
 
--- 4. 유용한 뷰: 오늘의 골드박스 (최신 스냅샷)
+-- ============================================
+-- 스키마 업데이트 (기존 테이블에 컬럼 추가)
+-- ============================================
+ALTER TABLE goldbox_products ADD COLUMN IF NOT EXISTS delivery_type TEXT DEFAULT '';
+ALTER TABLE goldbox_snapshots ADD COLUMN IF NOT EXISTS crawl_order INTEGER DEFAULT 0;
+
+-- 5. 브랜드 즐겨찾기 테이블
+CREATE TABLE IF NOT EXISTS brand_favorites (
+  id BIGSERIAL PRIMARY KEY,
+  brand_name TEXT NOT NULL,
+  user_id TEXT NOT NULL DEFAULT 'default',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE(brand_name, user_id)
+);
+
+ALTER TABLE brand_favorites ENABLE ROW LEVEL SECURITY;
+
+-- 즐겨찾기: 누구나 읽기/쓰기 가능 (인증 시스템 없으므로)
+CREATE POLICY "brand_favorites_read" ON brand_favorites
+  FOR SELECT USING (true);
+
+CREATE POLICY "brand_favorites_insert" ON brand_favorites
+  FOR INSERT WITH CHECK (true);
+
+CREATE POLICY "brand_favorites_delete" ON brand_favorites
+  FOR DELETE USING (true);
+
+CREATE INDEX IF NOT EXISTS idx_favorites_brand ON brand_favorites(brand_name);
+CREATE INDEX IF NOT EXISTS idx_favorites_user ON brand_favorites(user_id);
+
+-- 6. 유용한 뷰: 오늘의 골드박스 (최신 스냅샷)
 CREATE OR REPLACE VIEW goldbox_today AS
 SELECT
   p.product_id,
@@ -64,10 +94,12 @@ SELECT
   p.category,
   p.image_url,
   p.product_url,
+  p.delivery_type,
   s.original_price,
   s.sale_price,
   s.discount_rate,
   s.sold_rate,
+  s.crawl_order,
   s.crawled_at
 FROM goldbox_products p
 INNER JOIN LATERAL (
@@ -79,4 +111,4 @@ INNER JOIN LATERAL (
   LIMIT 1
 ) s ON true
 WHERE p.last_seen_date = CURRENT_DATE
-ORDER BY s.sold_rate DESC;
+ORDER BY s.crawl_order ASC;
