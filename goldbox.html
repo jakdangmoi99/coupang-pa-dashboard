@@ -241,7 +241,11 @@ a{color:inherit;text-decoration:none}
   <!-- Tab 1: 오늘의 브리핑 -->
   <div class="tab-content active" id="tab-today">
     <div class="filters">
-      <input type="date" class="filter-date" id="dateFilter" onchange="onDateChange()">
+      <button class="sort-btn on" onclick="setDatePreset('today',this)">오늘</button>
+      <button class="sort-btn" onclick="setDatePreset('yesterday',this)">어제</button>
+      <button class="sort-btn" onclick="setDatePreset('2days',this)">2일 전</button>
+      <input type="date" class="filter-date" id="dateFilter" onchange="onDateChange()" title="직접 날짜 선택">
+      <span style="border-left:1px solid var(--border);height:24px;margin:0 2px"></span>
       <input class="filter-input" id="searchInput" placeholder="상품명 또는 브랜드 검색..." oninput="filterProducts()">
       <select class="filter-select" id="deliveryFilter" onchange="filterProducts()">
         <option value="">전체 배송</option>
@@ -275,16 +279,21 @@ a{color:inherit;text-decoration:none}
 
   <!-- Tab 2: 브랜드 인텔리전스 -->
   <div class="tab-content" id="tab-brand">
-    <div id="favSection" style="margin-bottom:20px;display:none">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+    <div id="favSection" style="margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
         <h3 style="font-size:15px;font-weight:800;color:var(--gold)">⭐ 내 관심 브랜드</h3>
-        <span id="favCount" style="font-size:12px;color:var(--text3)"></span>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input class="filter-input" id="favAddInput" placeholder="브랜드명 입력 후 추가..." style="min-width:180px;flex:none">
+          <button class="btn btn-pr" onclick="addFavManual()" style="flex:none">추가</button>
+          <span id="favCount" style="font-size:12px;color:var(--text3);margin-left:4px"></span>
+        </div>
       </div>
       <div id="favBrandCards" class="brand-cards"></div>
+      <div id="favEmptyMsg" style="display:none;text-align:center;padding:20px;color:var(--text3);font-size:13px">브랜드를 추가하면 골드박스 활동을 추적할 수 있습니다</div>
     </div>
-    <div id="favCompareSection" class="chart-section" style="display:none">
-      <div class="chart-title">브랜드 활동 비교 (최근 30일)</div>
-      <div class="chart-box" style="height:280px"><canvas id="chartFavCompare"></canvas></div>
+    <div id="favCompareSection" style="display:none;margin-bottom:20px">
+      <h3 style="font-size:15px;font-weight:800;margin-bottom:12px">📋 브랜드별 골드박스 히스토리</h3>
+      <div id="favTimeline"></div>
     </div>
     <div class="brand-search-box" style="margin-bottom:16px">
       <input class="filter-input" id="brandSearchInput" placeholder="브랜드명 검색 (예: 삼성, LG, 나이키...)">
@@ -404,6 +413,22 @@ function getGoldboxEndUTC(dateStr){
 
 function onDateChange(){
   currentDate=document.getElementById('dateFilter').value;
+  // Clear preset button highlights
+  document.querySelectorAll('#tab-today .filters .sort-btn[onclick^="setDatePreset"]').forEach(b=>b.classList.remove('on'));
+  loadData();
+}
+
+function setDatePreset(preset,btn){
+  document.querySelectorAll('#tab-today .filters .sort-btn[onclick^="setDatePreset"]').forEach(b=>b.classList.remove('on'));
+  if(btn) btn.classList.add('on');
+  const kstNow=new Date(Date.now()+9*3600000);
+  if(kstNow.getUTCHours()<7) kstNow.setUTCDate(kstNow.getUTCDate()-1);
+  const base=new Date(kstNow);
+  if(preset==='yesterday') base.setUTCDate(base.getUTCDate()-1);
+  else if(preset==='2days') base.setUTCDate(base.getUTCDate()-2);
+  const dateStr=base.toISOString().split('T')[0];
+  document.getElementById('dateFilter').value=dateStr;
+  currentDate=dateStr;
   loadData();
 }
 
@@ -740,6 +765,14 @@ function toggleFavorite(brandName){
   else addFavorite(brandName);
 }
 
+function addFavManual(){
+  const input=document.getElementById('favAddInput');
+  const name=input.value.trim();
+  if(!name) return;
+  addFavorite(name);
+  input.value='';
+}
+
 function onFavChange(){
   updateStats(allProducts);
   generateInsights(allProducts);
@@ -770,8 +803,15 @@ function renderFavSection(){
   const countEl=document.getElementById('favCount');
   const compareSection=document.getElementById('favCompareSection');
 
-  if(!favBrands.size){section.style.display='none';compareSection.style.display='none';return;}
-  section.style.display='block';
+  const emptyMsg=document.getElementById('favEmptyMsg');
+  if(!favBrands.size){
+    grid.innerHTML='';
+    emptyMsg.style.display='block';
+    countEl.textContent='';
+    compareSection.style.display='none';
+    return;
+  }
+  emptyMsg.style.display='none';
   countEl.textContent=favBrands.size+'개 브랜드';
 
   const cards=[...favBrands].map(b=>{
@@ -799,35 +839,91 @@ function renderFavSection(){
 
 async function loadFavCompareChart(){
   const section=document.getElementById('favCompareSection');
+  const timeline=document.getElementById('favTimeline');
   if(favBrands.size<1){section.style.display='none';return;}
   section.style.display='block';
   try{
     const brands=[...favBrands];
     const{data:products}=await sb
-      .from('goldbox_products').select('product_id,brand_name,last_seen_date')
-      .in('brand_name',brands);
-    if(!products||!products.length){section.style.display='none';return;}
+      .from('goldbox_products').select('product_id,product_name,brand_name,category,image_url,product_url,first_seen_date,last_seen_date')
+      .in('brand_name',brands)
+      .order('last_seen_date',{ascending:false});
 
-    const brandDates={};
-    const allDates=new Set();
-    products.forEach(p=>{
-      const b=p.brand_name,d=p.last_seen_date;
-      if(!brandDates[b]) brandDates[b]={};
-      brandDates[b][d]=(brandDates[b][d]||0)+1;
-      allDates.add(d);
+    if(!products||!products.length){
+      timeline.innerHTML='<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">아직 골드박스 등장 이력이 없습니다</div>';
+      return;
+    }
+
+    // Get snapshots for discount/sold data
+    const ids=products.map(p=>p.product_id);
+    const{data:snaps}=await sb
+      .from('goldbox_snapshots').select('product_id,discount_rate,sold_rate,sale_price,crawled_at')
+      .in('product_id',ids).order('crawled_at',{ascending:false});
+
+    const snapMap={};
+    (snaps||[]).forEach(s=>{
+      if(!snapMap[s.product_id]) snapMap[s.product_id]=[];
+      snapMap[s.product_id].push(s);
     });
 
-    const dates=[...allDates].sort().slice(-30);
-    const datasets=brands.filter(b=>brandDates[b]).map((b,i)=>({
-      label:b,
-      data:dates.map(d=>(brandDates[b]&&brandDates[b][d])||0),
-      borderColor:chartColors[i%chartColors.length],
-      backgroundColor:chartColors[i%chartColors.length]+'33',
-      fill:false,tension:.3,pointRadius:3
-    }));
+    // Group by brand
+    const brandProducts={};
+    products.forEach(p=>{
+      if(!brandProducts[p.brand_name]) brandProducts[p.brand_name]=[];
+      brandProducts[p.brand_name].push(p);
+    });
 
-    renderChart('chartFavCompare','line',{labels:dates.map(d=>d.substring(5)),datasets});
-  }catch(e){console.error('비교 차트 오류:',e);}
+    let html='';
+    brands.forEach((brand,bi)=>{
+      const prods=brandProducts[brand];
+      if(!prods||!prods.length){
+        html+=`<div class="card" style="margin-bottom:12px;padding:16px">
+          <div style="font-weight:700;margin-bottom:4px">${esc(brand)}</div>
+          <div style="color:var(--text3);font-size:12px">골드박스 등장 이력 없음</div>
+        </div>`;
+        return;
+      }
+      html+=`<div style="margin-bottom:16px">
+        <div style="font-weight:700;font-size:14px;margin-bottom:8px;color:${chartColors[bi%chartColors.length]};display:flex;align-items:center;gap:6px">
+          <span style="width:10px;height:10px;border-radius:50%;background:${chartColors[bi%chartColors.length]};display:inline-block"></span>
+          ${esc(brand)} <span style="color:var(--text3);font-weight:400;font-size:12px">${prods.length}개 상품</span>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:6px">`;
+
+      prods.slice(0,10).forEach(p=>{
+        const pSnaps=snapMap[p.product_id]||[];
+        const latestSnap=pSnaps[0];
+        const discount=latestSnap?latestSnap.discount_rate:null;
+        const sold=latestSnap?latestSnap.sold_rate:null;
+        const price=latestSnap?latestSnap.sale_price:null;
+        const sc=sold!==null?soldClass(sold):'';
+        const shortName=(p.product_name||'').length>50?p.product_name.substring(0,50)+'…':p.product_name;
+
+        html+=`<div class="card" style="flex-direction:row;align-items:center;padding:10px 14px;gap:12px;cursor:pointer" onclick="openProduct('${p.product_url||''}')">
+          ${p.image_url?`<img src="${p.image_url}" style="width:48px;height:48px;border-radius:6px;object-fit:cover;flex:none" loading="lazy" onerror="this.style.display='none'">`:''}
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(shortName)}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">
+              ${p.first_seen_date===p.last_seen_date?p.last_seen_date:p.first_seen_date+' ~ '+p.last_seen_date}
+              ${p.category?` · ${p.category}`:''}
+            </div>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;flex:none">
+            ${discount!==null?`<div style="text-align:center"><div style="font-size:14px;font-weight:700;color:#ff4466">${discount}%</div><div style="font-size:10px;color:var(--text3)">할인</div></div>`:''}
+            ${sold!==null?`<div style="text-align:center"><div style="font-size:14px;font-weight:700;color:${sold>=60?'#ff4466':sold>=30?'#ffbe3d':'#00d4b4'}">${sold}%</div><div style="font-size:10px;color:var(--text3)">소진</div></div>`:''}
+            ${price?`<div style="text-align:center"><div style="font-size:13px;font-weight:600">${fmtPrice(price)}</div><div style="font-size:10px;color:var(--text3)">판매가</div></div>`:''}
+          </div>
+        </div>`;
+      });
+
+      if(prods.length>10){
+        html+=`<div style="text-align:center;padding:8px;color:var(--text3);font-size:12px">외 ${prods.length-10}개 상품 — 브랜드 검색에서 전체 보기</div>`;
+      }
+      html+=`</div></div>`;
+    });
+
+    timeline.innerHTML=html;
+  }catch(e){console.error('브랜드 히스토리 오류:',e);}
 }
 
 async function searchBrand(){
@@ -1136,6 +1232,7 @@ function toggleTheme(){
 
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&document.activeElement.id==='brandSearchInput') searchBrand();
+  if(e.key==='Enter'&&document.activeElement.id==='favAddInput') addFavManual();
 });
 </script>
 </body>
