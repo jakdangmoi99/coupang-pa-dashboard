@@ -467,6 +467,7 @@ tfoot td{padding:9px 9px;font-weight:700;color:var(--text);border-top:1px solid 
           <div class="tog">
             <button class="tbtn on" onclick="setTM('복합',this)">복합</button>
             <button class="tbtn" onclick="setTM('ROAS',this)">광고수익률</button>
+            <button class="tbtn" onclick="setTM('광고비',this)">광고비</button>
             <button class="tbtn" onclick="setTM('매출',this)">매출</button>
             <button class="tbtn on2" onclick="setG('주별',this,'main')">주별</button>
             <button class="tbtn" onclick="setG('일별',this,'main')">일별</button>
@@ -1172,10 +1173,8 @@ async function initShareMode(token){
 async function saveToDB(month,fileName,rows){
   // 관리자 읽기 전용 모드에서는 저장 차단
   if(adminTargetUid){console.warn('읽기 전용 모드 — 저장 차단');return;}
-  // 같은 월 데이터 통째로 삭제 후 새로 저장 (중복 방지)
+  // 업로드 데이터에 포함된 날짜만 삭제 후 새로 저장 (기존 날짜 데이터 보존)
   const uid=currentUser?.id||null;
-  const{error:delErr}=await sb.from('pa_data').delete().eq('file_month',month).eq('user_id',uid);
-  if(delErr)console.error('DB 삭제 오류:',delErr);
 
   const mapped=rows.map(r=>({
     date_str:String(r['날짜']||''),
@@ -1192,6 +1191,19 @@ async function saveToDB(month,fileName,rows){
     file_month:month,
     user_id:uid
   }));
+
+  // 업로드 데이터에 포함된 날짜들만 추출하여 해당 날짜 데이터만 삭제
+  const uploadDates=[...new Set(mapped.map(r=>r.date_str).filter(Boolean))];
+  if(uploadDates.length>0){
+    const statusEl0=document.getElementById('hdSub');
+    if(statusEl0)statusEl0.textContent=`🗑️ 중복 날짜 ${uploadDates.length}일치 정리 중...`;
+    // Supabase .in() 최대 배열 크기 고려하여 배치 처리
+    for(let i=0;i<uploadDates.length;i+=30){
+      const dateBatch=uploadDates.slice(i,i+30);
+      const{error:delErr}=await sb.from('pa_data').delete().in('date_str',dateBatch).eq('file_month',month).eq('user_id',uid);
+      if(delErr)console.error('날짜 삭제 오류:',delErr);
+    }
+  }
 
   // 진행상황 표시
   const total=mapped.length;
@@ -2253,8 +2265,10 @@ function renderTrend(){
       scales:{yM:{position:'left',ticks:{color:TC,font:{size:10},callback:v=>fW(v)},grid:{color:GC}},yR:{position:'right',ticks:{color:TC,font:{size:10},callback:v=>C(v)+'%'},grid:{display:false}},x:{ticks:{color:TC,font:{size:10},maxTicksLimit:20},grid:{color:GC}}}}});
   }else if(tM==='ROAS'){
     CH.trend=new Chart(ctx,{type:'line',data:{labels,datasets:[{label:'광고수익률(%)',data:roass,borderColor:'#ffbe3d',backgroundColor:'rgba(255,190,61,.08)',borderWidth:2.5,pointRadius:3,tension:.35,fill:true},{label:`목표 ${C(t)}%`,data:Array(dates.length).fill(t),borderColor:'rgba(255,68,102,.45)',borderWidth:1.5,borderDash:[6,4],pointRadius:0}]},options:{responsive:true,plugins:{legend:{labels:{color:TC,font:{size:11},boxWidth:10}}},scales:{x:{ticks:{color:TC,font:{size:10},maxTicksLimit:20},grid:{color:GC}},y:{ticks:{color:TC,font:{size:10},callback:v=>C(v)+'%'},grid:{color:GC}}}}});
+  }else if(tM==='광고비'){
+    CH.trend=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'광고비',data:spends,backgroundColor:'rgba(61,142,248,.3)',borderColor:'rgba(61,142,248,.7)',borderWidth:1,borderRadius:3}]},options:{responsive:true,plugins:{legend:{labels:{color:TC,font:{size:11},boxWidth:10}}},scales:{x:{ticks:{color:TC,font:{size:10},maxTicksLimit:20},grid:{color:GC}},y:{ticks:{color:TC,font:{size:10},callback:v=>fW(v)},grid:{color:GC}}}}});
   }else{
-    CH.trend=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'광고비',data:spends,backgroundColor:'rgba(61,142,248,.3)',borderColor:'rgba(61,142,248,.7)',borderWidth:1,borderRadius:3},{label:'전환매출(14일)',data:revs,backgroundColor:'rgba(0,224,154,.25)',borderColor:'rgba(0,224,154,.6)',borderWidth:1,borderRadius:3}]},options:{responsive:true,plugins:{legend:{labels:{color:TC,font:{size:11},boxWidth:10}}},scales:{x:{ticks:{color:TC,font:{size:10},maxTicksLimit:20},grid:{color:GC}},y:{ticks:{color:TC,font:{size:10},callback:v=>fW(v)},grid:{color:GC}}}}});
+    CH.trend=new Chart(ctx,{type:'bar',data:{labels,datasets:[{label:'전환매출(14일)',data:revs,backgroundColor:'rgba(0,224,154,.25)',borderColor:'rgba(0,224,154,.6)',borderWidth:1,borderRadius:3}]},options:{responsive:true,plugins:{legend:{labels:{color:TC,font:{size:11},boxWidth:10}}},scales:{x:{ticks:{color:TC,font:{size:10},maxTicksLimit:20},grid:{color:GC}},y:{ticks:{color:TC,font:{size:10},callback:v=>fW(v)},grid:{color:GC}}}}});
   }
 }
 
@@ -2809,8 +2823,10 @@ function renderH(page){
 // ════════════ CAMPAIGN ANALYSIS PAGE ════════════
 let campP='7일',slideGr='일별',slideCampData=null,slideCampName='';
 let campRoasTargets=JSON.parse(localStorage.getItem('campRoasTargets')||'{}');
+let campRoasEditMode=false;
 function getCampTarget(name){return campRoasTargets[name]||500;}
 function setCampTarget(name,val){campRoasTargets[name]=val;localStorage.setItem('campRoasTargets',JSON.stringify(campRoasTargets));window._mainNeedsRefresh=true;window._skipDetailScroll=true;renderCampPage();}
+function toggleRoasEdit(){campRoasEditMode=!campRoasEditMode;window._skipDetailScroll=true;renderCampPage();}
 
 // 공유 MIX 광고수익률 계산 함수
 async function calcMixRoas(period){
@@ -2864,8 +2880,8 @@ async function renderCampPage(){
   const mixEl=document.getElementById('campMixRoas');
   if(mixEl)mixEl.innerHTML=`MIX 목표 광고수익률: <b style="color:var(--accent)">${C(Math.round(mixTarget))}%</b> <span style="font-size:10px;color:var(--text3)">(캠페인별 목표의 광고비 가중평균)</span>`;
   const selName=slideCampName;
-  document.querySelector('#campTbl thead').innerHTML=`<tr><th>캠페인명</th><th>노출수</th><th>클릭수</th><th>클릭률</th><th>클릭당비용</th><th>전환율</th><th>집행광고비</th><th>광고전환매출</th><th>광고수익률<br><span style="font-size:9px;color:var(--text3)">(${cmpL} 대비)</span></th><th>수익률 목표</th><th style="border-left:2px solid var(--border)">광고비 비중</th><th>매출액 비중</th></tr>`;
-  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()" onmousedown="event.stopPropagation()"><input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--accent3);border-radius:4px;background:rgba(124,106,247,.1);color:var(--accent3);font-size:11px;text-align:center;font-family:'DM Mono',monospace;font-weight:700" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value))"/>%</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
+  document.querySelector('#campTbl thead').innerHTML=`<tr><th>캠페인명</th><th>노출수</th><th>클릭수</th><th>클릭률</th><th>클릭당비용</th><th>전환율</th><th>집행광고비</th><th>광고전환매출</th><th>광고수익률<br><span style="font-size:9px;color:var(--text3)">(${cmpL} 대비)</span></th><th>수익률 목표 <button onclick="event.stopPropagation();toggleRoasEdit()" style="padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;cursor:pointer;border:1px solid ${campRoasEditMode?'var(--red)':'var(--accent3)'};background:${campRoasEditMode?'rgba(255,68,102,.12)':'rgba(124,106,247,.1)'};color:${campRoasEditMode?'var(--red)':'var(--accent3)'};vertical-align:middle;margin-left:4px">${campRoasEditMode?'완료':'수정'}</button></th><th style="border-left:2px solid var(--border)">광고비 비중</th><th>매출액 비중</th></tr>`;
+  document.querySelector('#campTbl tbody').innerHTML=tblData.map(d=>{const sel=d.name===selName?'background:rgba(61,142,248,.08);':'';const roasChgHtml=d.roasChg!==null?`<span style="font-size:10px;font-weight:700;color:${d.roasChg>=0?'var(--green)':'var(--red)'}"> ${d.roasChg>=0?'▲':'▼'}${Math.abs(d.roasChg).toFixed(1)}%</span>`:'';return`<tr style="cursor:pointer;${sel}" onclick="openCampDetail('${d.name.replace(/'/g,"\\'")}')"><td style="font-weight:600;max-width:200px;white-space:normal">${d.name}</td><td>${fN(d.imp)}</td><td>${fN(d.clicks)}</td><td>${d.ctr.toFixed(2)}%</td><td>₩${C(Math.round(d.cpc))}</td><td>${d.cvr.toFixed(1)}%</td><td style="font-family:'DM Mono',monospace">${fW(d.spend)}</td><td style="font-family:'DM Mono',monospace;color:var(--green)">${fW(d.rev)}</td><td><span class="bdg ${rC(d.roas,d.target)}">${C(Math.round(d.roas))}%</span>${roasChgHtml}</td><td onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" style="text-align:center">${campRoasEditMode?`<input type="number" value="${Math.round(d.target)}" min="0" step="100" style="width:60px;padding:2px 4px;border:1px solid var(--accent3);border-radius:4px;background:rgba(124,106,247,.1);color:var(--accent3);font-size:11px;text-align:center;font-family:'DM Mono',monospace;font-weight:700" onclick="event.stopPropagation()" onmousedown="event.stopPropagation()" onchange="setCampTarget('${d.name.replace(/'/g,"\\'")}',Number(this.value))"/>%`:`<span style="font-size:12px;font-weight:700;color:var(--accent3);font-family:'DM Mono',monospace">${C(Math.round(d.target))}%</span>`}</td><td style="border-left:2px solid var(--border)">${d.spendPct.toFixed(1)}%</td><td>${d.revPct.toFixed(1)}%</td></tr>`;}).join('');
   await renderCampIns(tblData,globalT);
   if(slideCampName&&!window._skipDetailScroll)openCampDetail(slideCampName);
   window._skipDetailScroll=false;
