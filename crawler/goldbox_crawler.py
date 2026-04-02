@@ -13,6 +13,13 @@ import time
 import json
 import random
 import logging
+
+# .env 파일 로드 (로컬 실행용)
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
+except ImportError:
+    pass
 from datetime import datetime, timezone, timedelta
 
 from selenium import webdriver
@@ -29,7 +36,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://jzzwrlvtospuwntnafhn.supabase.co")
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://daukcarsixncmzhlhwok.supabase.co")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 KST = timezone(timedelta(hours=9))
 
