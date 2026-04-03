@@ -194,6 +194,23 @@ a{color:inherit;text-decoration:none}
   .stats{grid-template-columns:repeat(2,1fr)}
   .grid{grid-template-columns:repeat(2,1fr);gap:8px}
 }
+.modal-overlay{position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,.7);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.modal-content{background:var(--bg2);border:1px solid var(--border);border-radius:16px;max-width:600px;width:100%;max-height:85vh;overflow-y:auto;padding:24px;position:relative}
+.modal-close{position:absolute;top:12px;right:16px;background:none;border:none;color:var(--text3);font-size:20px;cursor:pointer}
+.modal-close:hover{color:var(--text1)}
+.modal-product-name{font-size:15px;font-weight:700;margin-bottom:4px;padding-right:30px}
+.modal-brand{font-size:13px;color:var(--accent);margin-bottom:16px}
+.modal-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:20px}
+.modal-stat{background:var(--bg3);border-radius:8px;padding:10px;text-align:center}
+.modal-stat .mv{font-size:18px;font-weight:800}
+.modal-stat .ml{font-size:10px;color:var(--text3);margin-top:2px}
+.modal-timeline{margin-top:16px}
+.modal-timeline-title{font-size:13px;font-weight:700;margin-bottom:10px}
+.modal-timeline-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border)}
+.modal-timeline-time{font-size:12px;font-weight:600;color:var(--text2);min-width:50px}
+.modal-timeline-bar{flex:1;height:20px;background:var(--bg3);border-radius:4px;position:relative;overflow:hidden}
+.modal-timeline-fill{height:100%;border-radius:4px;transition:width .3s}
+.modal-timeline-val{font-size:12px;font-weight:700;min-width:40px;text-align:right}
 </style>
 </head>
 <body>
@@ -345,6 +362,14 @@ a{color:inherit;text-decoration:none}
         <div class="chart-box"><canvas id="chartSold"></canvas></div>
       </div>
     </div>
+  </div>
+</div>
+
+<!-- Product Detail Modal -->
+<div id="productModal" class="modal-overlay" onclick="if(event.target===this)closeModal()" style="display:none">
+  <div class="modal-content">
+    <button class="modal-close" onclick="closeModal()">✕</button>
+    <div id="modalBody"></div>
   </div>
 </div>
 
@@ -682,7 +707,7 @@ function renderTable(items){
       }).join('');
     }
 
-    return `<tr class="${isFav?'fav-row':''}" onclick="openProduct('${p.product_url||''}')">
+    return `<tr class="${isFav?'fav-row':''}" onclick="openProductModal('${p.product_id}')" style="cursor:pointer">
       <td class="td-fav" onclick="event.stopPropagation();toggleFavorite('${esc(p.brand_name)}')"><span class="fav-star ${isFav?'on':'off'}">${isFav?'★':'☆'}</span></td>
       <td class="td-rank">${i+1}</td>
       <td class="td-brand" title="${esc(p.brand_name)}">${esc(p.brand_name)||'-'}</td>
@@ -731,6 +756,70 @@ function cardHTML(p){
 }
 
 function openProduct(url){if(url) window.open(url,'_blank');}
+
+function openProductModal(productId){
+  const p=allProducts.find(x=>x.product_id===productId);
+  if(!p) return;
+  const modal=document.getElementById('productModal');
+  const body=document.getElementById('modalBody');
+  const sc=soldClass(p.sold_rate);
+  const timeLabels=p._timeLabels||[];
+  const soldByTime=p._soldByTime||{};
+
+  let timelineHTML='';
+  if(timeLabels.length>0){
+    const rows=timeLabels.map(t=>{
+      const val=soldByTime[t];
+      if(val===undefined) return '';
+      const cls=soldClass(val);
+      const color=val>=70?'var(--red)':val>=40?'var(--orange)':'var(--accent2)';
+      return `<div class="modal-timeline-row">
+        <div class="modal-timeline-time">${t}</div>
+        <div class="modal-timeline-bar"><div class="modal-timeline-fill ${cls}" style="width:${val}%;background:${color}"></div></div>
+        <div class="modal-timeline-val" style="color:${color}">${val}%</div>
+      </div>`;
+    }).filter(Boolean).join('');
+
+    if(rows){
+      timelineHTML=`<div class="modal-timeline">
+        <div class="modal-timeline-title">시간대별 소진율</div>
+        ${rows}
+      </div>`;
+    }
+  }
+
+  // If only 1 time point, show message
+  if(timeLabels.length<=1){
+    timelineHTML=`<div class="modal-timeline">
+      <div class="modal-timeline-title">시간대별 소진율</div>
+      <div style="color:var(--text3);font-size:12px;padding:12px 0">크롤링이 누적되면 시간대별 소진율 변화를 확인할 수 있습니다</div>
+    </div>`;
+  }
+
+  body.innerHTML=`
+    <div class="modal-product-name">${esc(p.product_name)}</div>
+    <div class="modal-brand">${esc(p.brand_name)} · ${esc(p.category||'기타')} · ${p.delivery_type||'-'}</div>
+    <div class="modal-stats">
+      <div class="modal-stat"><div class="mv" style="color:var(--red)">${p.discount_rate}%</div><div class="ml">할인율</div></div>
+      <div class="modal-stat"><div class="mv" style="color:${p.sold_rate>=70?'var(--red)':p.sold_rate>=40?'var(--orange)':'var(--accent2)'}">${p.sold_rate}%</div><div class="ml">소진율 (최신)</div></div>
+      <div class="modal-stat"><div class="mv">${fmtPrice(p.sale_price)}</div><div class="ml">판매가</div></div>
+    </div>
+    ${p.original_price?`<div style="font-size:12px;color:var(--text3);margin-bottom:16px">정가: ${fmtPrice(p.original_price)} → ${fmtPrice(p.sale_price)} (${p.discount_rate}% 할인)</div>`:''}
+    ${timelineHTML}
+    <div style="margin-top:16px;text-align:center">
+      <button class="btn btn-pr" onclick="openProduct('${p.product_url||''}')">쿠팡에서 보기 →</button>
+    </div>
+  `;
+  modal.style.display='flex';
+}
+
+function closeModal(){
+  document.getElementById('productModal').style.display='none';
+}
+
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape') closeModal();
+});
 
 // ══════════════════════════════════════
 // Favorites CRUD
