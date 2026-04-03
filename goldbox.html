@@ -935,7 +935,7 @@ async function loadFavCompareChart(){
   try{
     const brands=[...favBrands];
     // Use .or() with ilike for flexible brand matching
-    const orFilter=brands.map(b=>`brand_name.ilike.%${b}%`).join(',');
+    const orFilter=brands.map(b=>`brand_name.ilike.%${b}%,product_name.ilike.%${b}%`).join(',');
     const{data:products}=await sb
       .from('goldbox_products').select('product_id,product_name,brand_name,category,image_url,product_url,first_seen_date,last_seen_date')
       .or(orFilter)
@@ -969,7 +969,7 @@ async function loadFavCompareChart(){
     const brandProducts={};
     brands.forEach(b=>{brandProducts[b]=[];});
     products.forEach(p=>{
-      const matched=brands.find(b=>p.brand_name&&p.brand_name.includes(b)||b.includes(p.brand_name));
+      const matched=brands.find(b=>(p.brand_name&&(p.brand_name.includes(b)||b.includes(p.brand_name)))||(p.product_name&&p.product_name.includes(b)));
       if(matched) brandProducts[matched].push(p);
     });
 
