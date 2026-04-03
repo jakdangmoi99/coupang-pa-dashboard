@@ -931,12 +931,16 @@ async function loadFavCompareChart(){
   const timeline=document.getElementById('favTimeline');
   if(favBrands.size<1){section.style.display='none';return;}
   section.style.display='block';
+  timeline.innerHTML='<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">로딩 중...</div>';
   try{
     const brands=[...favBrands];
+    // Use .or() with ilike for flexible brand matching
+    const orFilter=brands.map(b=>`brand_name.ilike.%${b}%`).join(',');
     const{data:products}=await sb
       .from('goldbox_products').select('product_id,product_name,brand_name,category,image_url,product_url,first_seen_date,last_seen_date')
-      .in('brand_name',brands)
-      .order('last_seen_date',{ascending:false});
+      .or(orFilter)
+      .order('last_seen_date',{ascending:false})
+      .limit(200);
 
     if(!products||!products.length){
       timeline.innerHTML='<div style="text-align:center;padding:20px;color:var(--text3);font-size:13px">아직 골드박스 등장 이력이 없습니다</div>';
@@ -945,9 +949,15 @@ async function loadFavCompareChart(){
 
     // Get snapshots for discount/sold data
     const ids=products.map(p=>p.product_id);
-    const{data:snaps}=await sb
-      .from('goldbox_snapshots').select('product_id,discount_rate,sold_rate,sale_price,crawled_at')
-      .in('product_id',ids).order('crawled_at',{ascending:false});
+    // Supabase .in() has a limit, batch if needed
+    let snaps=[];
+    for(let i=0;i<ids.length;i+=50){
+      const batch=ids.slice(i,i+50);
+      const{data:s}=await sb
+        .from('goldbox_snapshots').select('product_id,discount_rate,sold_rate,sale_price,crawled_at')
+        .in('product_id',batch).order('crawled_at',{ascending:false});
+      if(s) snaps=snaps.concat(s);
+    }
 
     const snapMap={};
     (snaps||[]).forEach(s=>{
@@ -955,11 +965,12 @@ async function loadFavCompareChart(){
       snapMap[s.product_id].push(s);
     });
 
-    // Group by brand
+    // Group products by favorite brand (fuzzy match)
     const brandProducts={};
+    brands.forEach(b=>{brandProducts[b]=[];});
     products.forEach(p=>{
-      if(!brandProducts[p.brand_name]) brandProducts[p.brand_name]=[];
-      brandProducts[p.brand_name].push(p);
+      const matched=brands.find(b=>p.brand_name&&p.brand_name.includes(b)||b.includes(p.brand_name));
+      if(matched) brandProducts[matched].push(p);
     });
 
     let html='';
@@ -1320,6 +1331,7 @@ function toggleTheme(){
 (()=>{const t=localStorage.getItem('gb-theme');if(t)document.documentElement.dataset.theme=t;})();
 
 document.addEventListener('keydown',e=>{
+  if(e.isComposing) return;
   if(e.key==='Enter'&&document.activeElement.id==='brandSearchInput') searchBrand();
   if(e.key==='Enter'&&document.activeElement.id==='favAddInput') addFavManual();
 });
