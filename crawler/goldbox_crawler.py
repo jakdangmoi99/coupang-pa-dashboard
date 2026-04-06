@@ -544,13 +544,42 @@ document.querySelectorAll('a').forEach(function(a) {
 
     var lines = (card.innerText || '').split('\\n').filter(function(l) { return l.trim(); });
 
-    // 가격 추출
+    // 가격 추출 (원가/할인가 구분)
     var prices = [];
+    var originalPrice = 0;
+    var salePrice = 0;
     card.querySelectorAll('*').forEach(function(el) {
         var t = (el.textContent || '').trim().replace(/,/g, '');
         var nm = t.match(/^(\\d{3,10})원?$/);
-        if (nm) prices.push(parseInt(nm[1]));
+        if (!nm) return;
+        var val = parseInt(nm[1]);
+        // 부모/자식 중복 방지: 자식이 없는 리프 노드만
+        if (el.children && el.children.length > 0) return;
+        prices.push(val);
+        // 원가 감지: del, s 태그 또는 line-through 스타일
+        var tag = el.tagName.toLowerCase();
+        var style = window.getComputedStyle(el);
+        var parentTag = el.parentElement ? el.parentElement.tagName.toLowerCase() : '';
+        if (tag === 'del' || tag === 's' || parentTag === 'del' || parentTag === 's' ||
+            (style && style.textDecoration && style.textDecoration.indexOf('line-through') !== -1)) {
+            originalPrice = val;
+        }
     });
+    // 원가/할인가 결정
+    var uniquePrices = [];
+    var priceSet = {};
+    prices.forEach(function(p) { if (!priceSet[p]) { priceSet[p] = true; uniquePrices.push(p); } });
+    uniquePrices.sort(function(a, b) { return b - a; });
+    if (originalPrice > 0) {
+        // 원가가 명시적으로 감지된 경우
+        salePrice = uniquePrices.filter(function(p) { return p !== originalPrice; })[0] || uniquePrices[uniquePrices.length - 1] || originalPrice;
+    } else if (uniquePrices.length >= 2) {
+        originalPrice = uniquePrices[0];
+        salePrice = uniquePrices[1];
+    } else if (uniquePrices.length === 1) {
+        originalPrice = uniquePrices[0];
+        salePrice = uniquePrices[0];
+    }
 
     // 소진율 (width style)
     var soldRate = 0;
@@ -645,7 +674,8 @@ document.querySelectorAll('a').forEach(function(a) {
         pid: m[1], href: href, img: imgSrc,
         name: productName,
         brandFromCard: brandFromCard,
-        prices: prices, soldRate: soldRate, discountRate: discountRate,
+        prices: prices, originalPrice: originalPrice, salePrice: salePrice,
+        soldRate: soldRate, discountRate: discountRate,
         deliveryType: deliveryType
     });
 });
@@ -752,9 +782,14 @@ def crawl_goldbox():
                 seen_ids.add(pid)
                 new_in_batch += 1
 
-                prices = sorted(set(item.get("prices", [])), reverse=True)
-                orig = prices[0] if prices else 0
-                sale = prices[1] if len(prices) > 1 else (prices[0] if prices else 0)
+                # JS에서 원가/할인가 구분된 값 우선 사용
+                orig = item.get("originalPrice", 0) or 0
+                sale = item.get("salePrice", 0) or 0
+                # 폴백: prices 배열에서 추출
+                if not orig and not sale:
+                    prices = sorted(set(item.get("prices", [])), reverse=True)
+                    orig = prices[0] if prices else 0
+                    sale = prices[1] if len(prices) > 1 else (prices[0] if prices else 0)
 
                 discount = item.get("discountRate", 0)
                 if not discount and orig > sale > 0:
