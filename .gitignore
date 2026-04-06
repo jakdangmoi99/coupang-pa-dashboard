@@ -2,4 +2,5 @@
 .env
 *.log
 crawler/*.json
+!crawler/brand_overrides.json
 .claude/

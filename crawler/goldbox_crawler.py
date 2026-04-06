@@ -40,6 +40,19 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://daukcarsixncmzhlhwok.supa
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 KST = timezone(timedelta(hours=9))
 
+# 수동 브랜드 보정 사전 로드 (product_id → 올바른 브랜드명)
+BRAND_OVERRIDES = {}
+_overrides_path = os.path.join(os.path.dirname(__file__), "brand_overrides.json")
+if os.path.exists(_overrides_path):
+    try:
+        with open(_overrides_path, "r", encoding="utf-8") as f:
+            _raw = json.load(f)
+        BRAND_OVERRIDES = {k: v for k, v in _raw.items() if not k.startswith("_")}
+        if BRAND_OVERRIDES:
+            logging.info(f"브랜드 보정 사전 로드: {len(BRAND_OVERRIDES)}개")
+    except Exception:
+        pass
+
 # ============================================================
 # 브랜드 사전 (주요 쿠팡 골드박스 출현 브랜드)
 # ============================================================
@@ -335,9 +348,46 @@ def classify_category(name):
 def extract_brand(product_name, brand_from_card=""):
     """
     제품명에서 브랜드명 추출 (다중 전략)
-    우선순위: 알려진 브랜드 사전 → 카드 DOM → 제품명 패턴
+    우선순위: 알려진 브랜드 사전 → 카드 DOM (필터링) → 제품명 패턴
     """
     name = product_name.strip()
+
+    # 브랜드가 아닌 노이즈 단어 블랙리스트
+    BRAND_BLACKLIST = {
+        '사은품', '쿠폰할인', '쿠폰', '본사정품', '정품', '한정수량', '한정수량마감',
+        '한정수량 마감', '당일발송', '무료배송', '즉시할인', '특가', '최저가', '오늘의특가',
+        '카드할인', '카드추가할인', '추가할인', '적립', '포인트', '리뷰', '평점',
+        '품절임박', '대용량', '한정', '묶음', '개', '세트', '팩', '박스',
+    }
+
+    # 브랜드에 붙는 불필요한 접미사 (띄어쓰기 없이 붙은 경우)
+    BRAND_SUFFIXES = [
+        '여성용', '남성용', '아동용', '유아용', '공용', '키즈', '주니어', '시니어',
+        '세트', '패키지', '기획', '한정판', '리미티드', '에디션', '스페셜',
+    ]
+
+    def _clean_brand(b):
+        """브랜드명에서 접미사 분리"""
+        for suffix in BRAND_SUFFIXES:
+            if b.endswith(suffix) and len(b) > len(suffix) + 1:
+                return b[:-len(suffix)].strip()
+        return b
+
+    def _is_noise(text):
+        """브랜드가 아닌 노이즈인지 체크"""
+        t = text.strip()
+        if t in BRAND_BLACKLIST or t.lower() in {x.lower() for x in BRAND_BLACKLIST}:
+            return True
+        # URL 패턴
+        if re.search(r'https?://|www\.|\.com|\.co\.kr|coupang', t, re.I):
+            return True
+        # 숫자+단위만
+        if re.match(r'^[\d,]+\s*(원|개|매|입|세트|팩|%|ml|g|kg|L)$', t, re.I):
+            return True
+        # 순수 숫자
+        if t.replace(',', '').replace('.', '').isdigit():
+            return True
+        return False
 
     # 전략 1: 알려진 브랜드 사전 매칭
     name_lower = name.lower()
@@ -345,32 +395,29 @@ def extract_brand(product_name, brand_from_card=""):
         if keyword in name_lower:
             return brand
 
-    # 전략 2: DOM 카드에서 추출한 짧은 텍스트
+    # 전략 2: DOM 카드에서 추출한 짧은 텍스트 (필터링 강화)
     if brand_from_card and len(brand_from_card) < 30:
         cleaned = re.sub(r'[^가-힣a-zA-Z0-9\s]', '', brand_from_card).strip()
-        if cleaned and len(cleaned) >= 2:
-            return cleaned
+        if cleaned and len(cleaned) >= 2 and not _is_noise(cleaned):
+            return _clean_brand(cleaned)
 
     # 전략 3: 대괄호/괄호 안 브랜드 "[브랜드]" or "(브랜드)"
     bracket = re.match(r'[\[\(]([가-힣a-zA-Z0-9\s]+)[\]\)]', name)
     if bracket:
-        return bracket.group(1).strip()
+        b = bracket.group(1).strip()
+        if not _is_noise(b):
+            return _clean_brand(b)
 
     # 전략 4: 제품명 첫 단어 (한글 2자 이상 or 영문 2자 이상)
     first_word = name.split()[0] if name.split() else ""
     cleaned = re.sub(r'[^가-힣a-zA-Z0-9]', '', first_word).strip()
 
-    # 너무 짧거나 숫자만이면 스킵
     if len(cleaned) < 2:
         return ""
-    if cleaned.isdigit():
-        return ""
-    # 단위어 스킵
-    skip_words = {'개', '세트', '팩', '박스', '묶음', '대용량', '한정', '특가', '최저가', '정품'}
-    if cleaned in skip_words:
+    if _is_noise(cleaned):
         return ""
 
-    return cleaned
+    return _clean_brand(cleaned)
 
 
 # ============================================================
@@ -576,10 +623,21 @@ document.querySelectorAll('a').forEach(function(a) {
         productName = candidates.reduce(function(a, b) { return a.length >= b.length ? a : b; });
     }
 
-    // 브랜드 후보: 제품명 아닌 짧은 라인
+    // 브랜드 후보: 제품명 아닌 짧은 라인 (노이즈 필터링 강화)
+    var brandBlacklist = ['사은품', '쿠폰할인', '쿠폰', '본사정품', '정품', '한정수량', '한정수량마감',
+        '한정수량 마감', '당일발송', '무료배송', '즉시할인', '특가', '최저가', '오늘의특가',
+        '카드할인', '카드추가할인', '추가할인', '적립', '포인트', '리뷰', '평점',
+        'R.LUX', 'R.LUX혜택', 'BEST', 'HOT', 'NEW', 'SALE', '품절임박'];
     candidates.forEach(function(l) {
         if (l !== productName && !brandFromCard && l.length < 30 && l.length >= 2) {
-            brandFromCard = l.trim();
+            var t = l.trim();
+            var isBad = false;
+            for (var bi = 0; bi < brandBlacklist.length; bi++) {
+                if (t === brandBlacklist[bi] || t.toLowerCase() === brandBlacklist[bi].toLowerCase()) { isBad = true; break; }
+            }
+            if (/^https?:\/\//.test(t) || /\.com|www\.|coupang/.test(t)) isBad = true;
+            if (/^[\d,]+\s*(원|개|매|입|세트|팩|%|ml|g|kg|L)$/i.test(t)) isBad = true;
+            if (!isBad) brandFromCard = t;
         }
     });
 
@@ -704,7 +762,11 @@ def crawl_goldbox():
 
                 name = (item.get("name") or "")[:200]
                 brand_from_card = item.get("brandFromCard", "")
-                brand = extract_brand(name, brand_from_card)
+                # 수동 보정 사전 우선 적용
+                if pid in BRAND_OVERRIDES:
+                    brand = BRAND_OVERRIDES[pid]
+                else:
+                    brand = extract_brand(name, brand_from_card)
                 category = classify_category(name)
 
                 products.append({
